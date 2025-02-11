@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "nodemon index_single_swap_transfer.js",
+    "dev": "nodemon bot.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
@@ -21,8 +22,10 @@
     "bn.js": "^5.2.1",
     "bs58": "^6.0.0",
     "dotenv": "^16.4.7",
+    "node-cache": "^5.1.2",
     "nodemon": "^3.1.9",
     "pg": "^8.13.1",
+    "sequelize": "^6.37.5",
     "telegraf": "^4.16.3"
   }
 }

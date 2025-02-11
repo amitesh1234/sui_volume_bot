@@ -2,27 +2,6 @@ require('dotenv').config();
 const { Telegraf, Markup } = require('telegraf');
 const BigNumber = require('bignumber.js');
 const { transactionsPerMinute, getDelayMs } = require('./constants')
-const { createSBD } = require('./Repository/DBE');
-require('./Repository/models');
-
-async function getTokenInfo(tokenId) {
-    const url = `https://api.dexscreener.com/latest/dex/tokens/${tokenId}`;
-    try {
-        const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`HTTP error! Status: ${response.status}`);
-        }
-        const data = await response.json();
-        if (data?.pairs == null) {
-            return;
-        }
-        const tokenData = data?.pairs[0];
-        return tokenData.pairAddress;
-    } catch (error) {
-        console.error("Error fetching Token Info:", error.message);
-        return null;
-    }
-}
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
@@ -64,14 +43,10 @@ bot.on('text', async (ctx) => {
         const userText = ctx.message.text.trim();
 
         if (!userSessions[userId]?.tokenAddress) {
-            if (!isValidSolanaAddress(userText))
+            if (!isValidSolanaAddress(userText)) {
                 return ctx.reply('❌ Invalid Solana token address! Please enter a valid 32-44 character Solana address.');
+            }
 
-            const tokenInfo = await getTokenInfo(userText)
-            if (!tokenInfo)
-                return ctx.reply("❌ Can't find token pair on exchange.");
-
-            console.log(tokenInfo);
             userSessions[userId].tokenAddress = userText;
 
             return ctx.reply(
@@ -87,7 +62,7 @@ bot.on('text', async (ctx) => {
             }
 
             userSessions[userId].targetVolume = userText;
-            return showMainTemplate(ctx, userId);
+            return showMainTemplate(ctx, userId, false);
         }
 
         // If user is waiting for custom delay input
@@ -95,35 +70,35 @@ bot.on('text', async (ctx) => {
             console.log("delay")
             const customDelay = parseInt(userText, 10);
 
-            if (isNaN(customDelay) || customDelay <= 0)
+            if (isNaN(customDelay) || customDelay <= 0) {
                 return ctx.reply('❌ Invalid input! Please enter a positive number for transactions per minute.');
-
+            }
 
             // Store the custom delay and update the user session
-            userSessions[userId].delayMode = "Custom";
+            userSessions[userId].delayMode = "Custom Mode";
             userSessions[userId].transactionsPerMinute = customDelay;
             userSessions[userId].waitingForCustomDelay = false; // Reset state
 
             // Show the updated main template
-            return showMainTemplate(ctx, userId);
+            return showMainTemplate(ctx, userId, true);
         }
 
         // If user is waiting for custom delay input
         if (userSessions[userId]?.waitingForCustomSolAmount) {
-            const solAmount = parseFloat(userText); // Parse as float
-        
-            if (isNaN(solAmount) || solAmount < 0.001) 
-                return ctx.reply('❌ Invalid input! Please enter a valid SOL amount (minimum 0.001).');
-            
-        
-            // Store the custom SOL amount and update the user session
-            userSessions[userId].swapSolAmount = solAmount.toFixed(3); // Ensure 3 decimal places
+            console.log("swap")
+            const solAmount = parseInt(userText, 10);
+
+            if (isNaN(solAmount) || solAmount <= 0) {
+                return ctx.reply('❌ Invalid input! Please enter a positive number for transactions per minute.');
+            }
+
+            // Store the custom delay and update the user session
+            userSessions[userId].swapSolAmount = solAmount;
             userSessions[userId].waitingForCustomSolAmount = false; // Reset state
-        
+
             // Show the updated main template
-            return showMainTemplate(ctx, userId);
+            return showMainTemplate(ctx, userId, true);
         }
-        
 
     } catch (error) {
         console.error('Error:', error);
@@ -132,26 +107,25 @@ bot.on('text', async (ctx) => {
 });
 
 // Function to show the main template with buttons in new order
-function showMainTemplate(ctx, userId) {
+function showMainTemplate(ctx, userId, showDelayOptions) {
     let buttons = [
-        [Markup.button.callback('🚀 Launce', 'LAUNCE_BOT')],
-        [Markup.button.callback(`▶️ Delay Time (${getDelayMs(userSessions[userId]?.transactionsPerMinute || 30)})`, 'SHOW_DELAY_OPTIONS'), Markup.button.callback(`✅ Buy with ${userSessions[userId]?.swapSolAmount || '3'} SOL`, 'BUY_SOL')],
-        // [Markup.button.callback('💵 Withdraw', 'WITHDRAW'), Markup.button.callback('🔄 Refresh', 'REFRESH')],
-        [Markup.button.callback('📖 Guide', 'GUIDE')]
+        [Markup.button.callback(`▶️ Delay Time (${getDelayMs(userSessions[userId]?.transactionsPerMinute || 30)})`, 'SHOW_DELAY_OPTIONS'), Markup.button.callback(`✅ Buy with ${userSessions[userId]?.swap || '3'} SOL`, 'BUY_SOL')],
+        [Markup.button.callback('💵 Withdraw', 'WITHDRAW'), Markup.button.callback('🔄 Refresh', 'REFRESH')],
+        [Markup.button.callback('📖 Guide', 'GUIDE'), Markup.button.callback('🔗 Referral', 'REFERRAL')]
     ];
 
     ctx.reply(
         `\uD83D\uDD39 *Welcome to Impact Bot (Alpha)* \uD83D\uDD39\n\n` +
         `Impact Bot (Alpha): A high-speed, anti-MEV volume bot designed specifically for Solana.\n\n` +
         `✅ *Token Info:* \n` +
-        `🔹 Token Address: \`${userSessions[userId]?.tokenAddress}\`\n` +
-        `💰 Target Volume Amount: *$${userSessions[userId]?.targetVolume}*\n\n` +
+        `🔹 Token Address: \`${userSessions[userId].tokenAddress}\`\n` +
+        `💰 Target Volume Amount: *$${userSessions[userId].targetVolume}*\n\n` +
         `⚙️ ${userSessions[userId]?.delayMode || "Fast"} Mode: ${userSessions[userId]?.transactionsPerMinute || "30"} transactions per min\n` +
-        `🔄 Sol swapped per TX: ${userSessions[userId]?.swapSolAmount || "3"} SOL\n\n` +
+        `🔄 Sol swapped per TX: ${userSessions[userId]?.swapSolAmount || "3"}  SOL\n\n` +
         `⏳ Bot worked: 0 min\n` +
         `📊 Bot made: 0 Makers, 0 Txns\n\n` +
         `💰 *Your Deposit Wallet:*\n` +
-        `\`97SLkxxCVjdBk5WSUvsaKmPF95H9Ks5HD6pSfDJmNCgu\`\n` +
+        `\`JzC5jGH64AvFW9E5MPyLczP8UWPuea7Hw9gYasbZ\`\n` +
         `💲 Balance: 0 SOL\n\n` +
         `⚠️ The minimum deposit to reach the target volume is 4.1 SOL\n` +
         `⏳ The estimated time to reach the target volume is 1.5 min`,
@@ -212,7 +186,7 @@ bot.action('GUIDE', (ctx) => {
 // Handle going back to the main template
 bot.action('BACK_TO_MAIN', (ctx) => {
     const userId = ctx.from.id;
-    showMainTemplate(ctx, userId);
+    showMainTemplate(ctx, userId, false);
 });
 
 // Handle delay time selection
@@ -231,7 +205,7 @@ bot.action(/^DELAY_/, async (ctx) => {
     userSessions[userId].delayMode = capitalizedMode;
     userSessions[userId].transactionsPerMinute = transactionsPerMinute[capitalizedMode];
 
-    showMainTemplate(ctx, userId);
+    showMainTemplate(ctx, userId, true);
 
 });
 
@@ -254,7 +228,7 @@ bot.action(/^SWAP_SOL_/, async (ctx) => {
     if (!userSessions[userId]) userSessions[userId] = {}; // Ensure session exists
 
     userSessions[userId].swapSolAmount = solAmount;
-    showMainTemplate(ctx, userId);
+    showMainTemplate(ctx, userId, true);
 });
 
 bot.action('ADD_CUSTOM_SOL_SWAP', async (ctx) => {
@@ -264,33 +238,6 @@ bot.action('ADD_CUSTOM_SOL_SWAP', async (ctx) => {
 
     ctx.reply('⏳ Please enter the amount of SOL to use in buying.(e.g., 10):');
 
-});
-
-bot.action('LAUNCE_BOT', async (ctx) => {
-    const userId = ctx.from.id;
-    const data = userSessions[userId];
-    console.log(data);
-    if (!data || !data?.tokenAddress || !data?.targetVolume)
-        return ctx.reply("⏳ Can't launch the bot.");
-
-    const collectingData = {
-        userid: userId,
-        fullname: ctx.from.first_name || "" + " " + ctx.from.last_name || "",
-        username: ctx.from.username || "",
-        tokenaddress: data?.tokenAddress,
-        targetvolume: data?.targetVolume,
-        transactions: data?.transactionsPerMinute || '30', //default
-        amount: data?.swapSolAmount || '3' //default
-    }
-    console.log(collectingData);
-
-    const response = await createSBD(collectingData);
-    if (!response) return ctx.reply("⏳ Can't launch the bot.");
-
-    // Reset user session for a fresh start
-    userSessions[userId] = {};
-
-    ctx.reply("✅ Bot launched successfully!\n\n🔄 Restarting session. Please enter a new token address.");
 });
 
 // Start the bot

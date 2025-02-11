@@ -9,11 +9,32 @@ const connection2 = new Connection('https://mainnet.helius-rpc.com/?api-key=', '
 const privateKey = "";
 const wsolAddress = "So11111111111111111111111111111111111111112";
 
+const transactionsPerMinute = {
+    "Regular": 5,
+    "Fast": 30,
+    "Turbo": 60
+}
+
+
+const getDelayMs = (t) => {
+    const delayMs = (60 / t) * 1000; // Calculate delay in milliseconds
+
+    if (delayMs >= 1000) {
+        return Math.round(delayMs / 1000) + "s"; // Convert to whole seconds
+    } else {
+        return Math.round(delayMs) + "ms"; // Keep it in whole milliseconds
+    }
+};
+
+
+
 module.exports = {
     connection,
     connection2,
     privateKey,
     wsolAddress,
     slippage: 4,
-    tax: 0.5
+    tax: 0.5,
+    transactionsPerMinute,
+    getDelayMs
 }

@@ -596,3 +596,7 @@ const runVolumeBot = async () => {
 }
 
 runVolumeBot()
+
+module.exports = {
+    getTokenInfo
+}
