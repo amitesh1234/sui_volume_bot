@@ -73,3 +73,16 @@ exports.insertSwapTransaction = async (buyTx, sellTx, time, tradeamount, suibala
         throw new Error("Error in [insertSwapTransaction]");
     }
 };
+
+exports.insertSolanaSwapTransaction = async (contractData, transferData) => {
+    try {
+        const rows = await db.query(
+            "INSERT INTO swaptransactions (swapbeforewsolbalance, swapbeforesolbalance, swapaftersolbalance, swaptxhash, transfertxhash) VALUES ($1, $2, $3, $4, $5)",
+            [contractData?.beforeWsolBalance, contractData?.beforeSolBalance, contractData?.afterSolBalance, contractData?.txHash, transferData?.txHash]
+        );
+        return rows;
+    } catch (err) {
+        console.error("Error in [insertSolanaSwapTransaction]:", err);
+        throw new Error("Error in [insertSolanaSwapTransaction]");
+    }
+};
