@@ -332,7 +332,6 @@ bot.action('CHECK_BALANCE', async (ctx) => {
     if (!balance) return ctx.reply("⏳ Some issue occurred, please try again later.")
 
     updateData({ userid: userId }, { balance: balance }, "sol_wallet")
-    if (!userSessions[userId]) userSessions[userId] = {}; // Ensure session exists
 
     userSessions[userId].solBalance = balance;
     showMainTemplate(ctx, userId);
