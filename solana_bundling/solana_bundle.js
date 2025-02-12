@@ -534,9 +534,8 @@ const volumeBundle = async (pairAddress, minAmount, maxAmount, bundleSize, payer
 
 
 
+
 const runVolumeBot = async (token, minAmount, maxAmount, transactionsPerMinute, secretKey, targetVolume, targetVolumeInSol) => {
-    console.log(targetVolume)
-    return;
     // const token = "AxriehR6Xw3adzHopnvMn7GcpRFcD41ddpiTWMg6pump";  //////////////////
     // const minAmount = 1000000;  /////////////////
     // const maxAmount = 1500000; ////////////////////
