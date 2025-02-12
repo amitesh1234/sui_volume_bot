@@ -5,6 +5,7 @@ const { transactionsPerMinute, getDelayMs } = require('./constants')
 const { createSBD, createData, getSingleData, updateData } = require('./Repository/DBE');
 require('./Repository/models');
 const { getSolanaBalance, generateWallet } = require("./solana_bundling/getbalanace")
+const fetch = require("node-fetch");
 
 async function getTokenInfo(tokenId) {
     const url = `https://api.dexscreener.com/latest/dex/tokens/${tokenId}`;

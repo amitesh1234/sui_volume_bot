@@ -28,14 +28,7 @@ module.exports = function (sequelize, DataTypes) {
         tableName: "sol_wallet", // Make sure this matches your table name
         timestamps: true // Set to true if you want timestamps like createdAt and updatedAt columns
     });
-    // user.associate = function (models) {
-    //   user.hasOne(models.kycrequests, {
-    //     foreignKey: "userid",
-    //     constraints: false,
-    //     as: "kycdetails"
-    //   });
-
-    // };
+   
     sol_wallet.beforeCreate((instance) => {
         // Set the createdAt field to the current date/time
         instance.createdAt = new Date();
