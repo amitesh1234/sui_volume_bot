@@ -287,7 +287,7 @@ const sellSwap = async (accounts, amountLamp, minAmountLamp, wallet, derivedPubk
 
 }
 
-const buildTx = async (minAmount, maxAmount, payer, feepayer, poolKeys, otherAccountAddress) => {
+const buildTx = async (amount, payer, feepayer, poolKeys, otherAccountAddress) => {
     let instructions = [];
 
     ////////////////////////////////// BUY PROCESS ///////////////////////////////////////
@@ -301,7 +301,6 @@ const buildTx = async (minAmount, maxAmount, payer, feepayer, poolKeys, otherAcc
         TOKEN_PROGRAM_ID
     );
     console.log("Derived Address:", derivedPubkey);
-    let amount = (Math.floor(Math.random() * (Number(maxAmount) - Number(minAmount) + 1)) + Number(minAmount));
     let amountWithRent = amount + 0.00203928 * LAMPORTS_PER_SOL;
     //TODO CHANGE THIS
     // console.log(amount)
@@ -462,7 +461,15 @@ const volumeBundle = async (pairAddress, minAmount, maxAmount, bundleSize, payer
     try {
         console.log("[volumeBundle]");
 
-        const promises = Array.from({ length: bundleSize }, (_, index) => buildTx(minAmount, maxAmount, payer, feepayer, poolKeys, otherAccountAddress));
+        function getRandomAmount(min, max) {
+            return (Math.floor(Math.random() * (Number(max) - Number(min) + 1)) + Number(min));
+        }
+        
+        const amounts = Array.from({ length: bundleSize }, () => getRandomAmount(minAmount, maxAmount));
+
+        // const promises = Array.from({ length: bundleSize }, (_, index) => buildTx(minAmount, maxAmount, payer, feepayer, poolKeys, otherAccountAddress));
+        const promises = amounts.map(amount => buildTx(amount, payer, feepayer, poolKeys, otherAccountAddress));
+        const totalAmount = amounts.reduce((sum, amount) => sum + amount, 0);
         const [jitoIx, recentBlockhashForSwap] = await Promise.all([getJitoTransferIx(payer), connection2.getLatestBlockhash()]);
         const instructions = await Promise.all(promises);
         instructions[0].push(jitoIx);
@@ -515,6 +522,7 @@ const volumeBundle = async (pairAddress, minAmount, maxAmount, bundleSize, payer
 
         // }
 
+        return totalAmount + (totalAmount*(slippage/100)).toFixed(2);
 
     } catch (err) {
         console.log("Error in [volumeBundle]: ", err);
@@ -526,25 +534,47 @@ const volumeBundle = async (pairAddress, minAmount, maxAmount, bundleSize, payer
 
 
 
-const runVolumeBot = async () => {
-    const token = "AxriehR6Xw3adzHopnvMn7GcpRFcD41ddpiTWMg6pump";
-    const minAmount = 1000000;
-    const maxAmount = 1500000;
-    const batchSize = 1;
+const runVolumeBot = async (token, minAmount, maxAmount, transactionsPerMinute, secretKey, targetVolume, targetVolumeInSol) => {
+    console.log(targetVolume)
+    return;
+    // const token = "AxriehR6Xw3adzHopnvMn7GcpRFcD41ddpiTWMg6pump";  //////////////////
+    // const minAmount = 1000000;  /////////////////
+    // const maxAmount = 1500000; ////////////////////
+    // const batchSize = 1; //////////////////////
+    // const delayTime = 11; ///////////////////
 
+    /*
+    no of batches = Math.floor(transactionsPerMinute/batch_size)
+    delay time: (50 / no of batches) - 1
+
+    transactionsPerMinute: 5
+    batchSize: 1
+    delayTime: 11 seconds 
+
+    transactionsPerMinute: 30
+    batchSize: 3
+    delayTime: 5 seconds
+    
+    transactionsPerMinute: 60
+    batchSize: 5
+    delayTime: 4 seconds
+
+    */
     const OTHER_MINT_ADDRESS = new PublicKey(token);
-    // const payer = Keypair.generate();
-    const payer = Keypair.fromSecretKey(bs58.default.decode("2sMwokLzrMezSbQ4zTRcWvoHogK4V4Wb9d4CpG9HknsfrnPkz56FAp4ff5f9pmqWYMVELcv2yr875FUoXUk6pUpD"));
-    const secretKey = bs58.default.decode(privateKey);
-    const feepayer = Keypair.fromSecretKey(secretKey);
-    // const wallet = new Wallet(payer);
+    const payer = Keypair.fromSecretKey(bs58.default.decode(secretKey));
+    // const payer = Keypair.fromSecretKey(bs58.default.decode("2sMwokLzrMezSbQ4zTRcWvoHogK4V4Wb9d4CpG9HknsfrnPkz56FAp4ff5f9pmqWYMVELcv2yr875FUoXUk6pUpD")); //////////////
+
+    ///////////// TODO bring this from database array: payerwallets where isactive=true
+    const secretKey1 = bs58.default.decode(privateKey);
+    const feepayer = Keypair.fromSecretKey(secretKey1);
+    const feePayerArray = [feepayer];
+    //////////////////// TODO
 
     const otherAccountAddress = await getAssociatedTokenAddress(OTHER_MINT_ADDRESS, payer.publicKey, false);
     const accountDetails = await connection.getAccountInfo(otherAccountAddress, 'confirmed');
     const initialTx = new Transaction();
     if (!accountDetails) {
         console.log("Creating associated token account");
-        // const tx = await createAssociatedTokenAccount(connection, payer, new PublicKey(wsolAddress), payer.publicKey);
         initialTx.add(
             createAssociatedTokenAccountIdempotentInstruction(
                 feepayer.publicKey,
@@ -555,7 +585,7 @@ const runVolumeBot = async () => {
             )
         )
         // console.log(tx)
-        await sendAndConfirmTransaction(connection2, initialTx, [feepayer, payer]); //todo remove this later when adddress lookup table code is uncommented
+        // await sendAndConfirmTransaction(connection2, initialTx, [feepayer, payer]); //todo remove this later when adddress lookup table code is uncommented
 
     }
     const pairAddress = await getTokenInfo(token);
@@ -568,15 +598,15 @@ const runVolumeBot = async () => {
     if (!poolKeys) {
         throw new Error("Cannot find pool data");
     }
-    // const addressLookupTxIx = await getAddressLookupTxIs(poolKeys, payer, feepayer);
+    const addressLookupTxIx = await getAddressLookupTxIs(poolKeys, payer, feepayer);
 
-    // initialTx.add(addressLookupTxIx?.ix[0], addressLookupTxIx?.ix[1]);
-    // console.log("Sending initial tx")
-    // await sendAndConfirmTransaction(connection2, initialTx, [feepayer, payer]);
+    initialTx.add(addressLookupTxIx?.ix[0], addressLookupTxIx?.ix[1]);
+    console.log("Sending initial tx")
+    await sendAndConfirmTransaction(connection2, initialTx, [feepayer, payer]);
 
-    const addressLookupTxIx = {
-        lookupTableAddress: new PublicKey("C66iQeHWjVdwhPfPZRhLoieWWskkJXSV21QuY2BZCx1V")
-    }
+    // const addressLookupTxIx = {
+    //     lookupTableAddress: new PublicKey("C66iQeHWjVdwhPfPZRhLoieWWskkJXSV21QuY2BZCx1V")
+    // }
 
     console.log("Geting lookup table data");
     const lookupTableAccount = await connection2.getAddressLookupTable(addressLookupTxIx?.lookupTableAddress)
@@ -588,15 +618,32 @@ const runVolumeBot = async () => {
     if (!lookupTableAccount) {
         throw new Error("Lookup table not found on-chain. Ensure it's created and confirmed.");
     }
-    console.log("lta: ", addressLookupTxIx?.lookupTableAddress)
 
     console.log("Running volume Bot");
-    volumeBundle(pairAddress, minAmount, maxAmount, batchSize, payer, feepayer, poolKeys, otherAccountAddress, addressLookupTxIx?.lookupTableAddress, lookupTableAccount);
+    let count = 0;
+    let achievedVolume = 0;
+    let totalTransactionCount = 0
+    while (true) {
+        //database call for transaction to check if still active
+        const currentFeePayer = feePayerArray[count % feePayerArray.length];
+        let volume = volumeBundle(pairAddress, minAmount, maxAmount, batchSize, payer, currentFeePayer, poolKeys, otherAccountAddress, addressLookupTxIx?.lookupTableAddress, lookupTableAccount);
+        count+=1;
+        achievedVolume+=volume;
+        totalTransactionCount += batchSize;
+        if(achievedVolume > targetVolumeInSol) {
+            //insert count, achievedVolume, totalCount
+            console.log("Stopping");
+            break;
+        }
+    }
+
+    console.log("[Done]");
 
 }
 
-runVolumeBot()
+// runVolumeBot()
 
 module.exports = {
-    getTokenInfo
+    getTokenInfo,
+    runVolumeBot
 }

@@ -35,6 +35,7 @@ module.exports = {
     wsolAddress,
     slippage: 4,
     tax: 0.5,
+    minSolAmount: 0.001,
     transactionsPerMinute,
     getDelayMs
 }

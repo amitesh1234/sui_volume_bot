@@ -1,10 +1,14 @@
 require('dotenv').config();
 const { Telegraf, Markup } = require('telegraf');
 const BigNumber = require('bignumber.js');
-const { transactionsPerMinute, getDelayMs } = require('./constants')
+const { transactionsPerMinute, getDelayMs, minSolAmount } = require('./constants')
 const { createSBD, createData, getSingleData, updateData } = require('./Repository/DBE');
 require('./Repository/models');
-const { getSolanaBalance, generateWallet } = require("./solana_bundling/getbalanace")
+const { getSolanaBalance, generateWallet } = require("./solana_bundling/getbalanace");
+
+const Faye = require('faye');
+const { LAMPORTS_PER_SOL } = require('@solana/web3.js');
+let client = new Faye.Client('http://localhost:8675/');
 
 async function getTokenInfo(tokenId) {
     const url = `https://api.dexscreener.com/latest/dex/tokens/${tokenId}`;
@@ -29,6 +33,18 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 
 // Temporary in-memory storage
 const userSessions = {};
+
+
+async function getSOLPrice() {
+    try {
+        const response = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=SOLUSDT");
+        const data = await response.json();
+        console.log("SOL Price:", data.price);
+        return data.price;
+    } catch (error) {
+        console.error("Error fetching SOL price:", error);
+    }
+}
 
 // Function to validate Solana token address
 const isValidSolanaAddress = (address) => {
@@ -63,6 +79,9 @@ bot.on('text', async (ctx) => {
     try {
         const userId = ctx.from.id;
         const userText = ctx.message.text.trim();
+        if (userText === "\\start") {
+            return ctx.reply('❌ To Start the bot please enter /start.');
+        }
 
         if (!userSessions[userId]?.tokenAddress) {
             if (!isValidSolanaAddress(userText))
@@ -77,7 +96,7 @@ bot.on('text', async (ctx) => {
 
             return ctx.reply(
                 '✅ Token address received!\n\n' +
-                '📨 *Input extra target Volume amount ($):*',
+                '📨 *Input target Volume amount ($):*',
                 { parse_mode: 'Markdown' }
             );
         }
@@ -91,7 +110,7 @@ bot.on('text', async (ctx) => {
             const wallet = await getSingleData({ userid: userId.toString() }, "sol_wallet");
 
             if (!wallet?.publickey) {
-                const { publicKey, secretKey } = await generateWallet();
+                const { publicKey, secretKey, keypair } = await generateWallet();
 
                 const data = {
                     userid: userId,
@@ -101,9 +120,11 @@ bot.on('text', async (ctx) => {
                 }
 
                 await createData(data, "sol_wallet");
+                const solPrice = await getSOLPrice();
 
                 userSessions[userId].depositWallet = publicKey;
                 userSessions[userId].solBalance = "0";
+                userSessions[userId].targetVolumeSol = Math.ceil(targetVolume / solPrice);
                 return showMainTemplate(ctx, userId);
             }
 
@@ -135,7 +156,7 @@ bot.on('text', async (ctx) => {
         if (userSessions[userId]?.waitingForCustomSolAmount) {
             const solAmount = parseFloat(userText); // Parse as float
 
-            if (isNaN(solAmount) || solAmount < 0.001)
+            if (isNaN(solAmount) || solAmount < Number(minSolAmount))
                 return ctx.reply('❌ Invalid input! Please enter a valid SOL amount (minimum 0.001).');
 
 
@@ -157,7 +178,7 @@ bot.on('text', async (ctx) => {
 // Function to show the main template with buttons in new order
 function showMainTemplate(ctx, userId) {
     let buttons = [
-        [Markup.button.callback('🚀 Launce', 'LAUNCE_BOT')],
+        [Markup.button.callback('🚀 Launch', 'LAUNCH_BOT')],
         [Markup.button.callback(`▶️ Delay Time (${getDelayMs(userSessions[userId]?.transactionsPerMinute || 30)})`, 'SHOW_DELAY_OPTIONS'), Markup.button.callback(`✅ Buy with ${userSessions[userId]?.swapSolAmount || '3'} SOL`, 'BUY_SOL')],
         // [Markup.button.callback('💵 Withdraw', 'WITHDRAW'), Markup.button.callback('🔄 Refresh', 'REFRESH')],
         [Markup.button.callback('📖 Guide', 'GUIDE'), Markup.button.callback('📖 Refresh Deposit Balance', 'CHECK_BALANCE')]
@@ -169,6 +190,7 @@ function showMainTemplate(ctx, userId) {
         `✅ *Token Info:* \n` +
         `🔹 Token Address: \`${userSessions[userId]?.tokenAddress}\`\n` +
         `💰 Target Volume Amount: *$${userSessions[userId]?.targetVolume}*\n\n` +
+        `💰 Target Volume Sol AMount: *$${userSessions[userId]?.targetVolumeSol} SOL*\n\n` +
         `⚙️ ${userSessions[userId]?.delayMode || "Fast"} Mode: ${userSessions[userId]?.transactionsPerMinute || "30"} transactions per min\n` +
         `🔄 Sol swapped per TX: ${userSessions[userId]?.swapSolAmount || "3"} SOL\n\n` +
         `⏳ Bot worked: 0 min\n` +
@@ -289,7 +311,7 @@ bot.action('ADD_CUSTOM_SOL_SWAP', async (ctx) => {
 
 });
 
-bot.action('LAUNCE_BOT', async (ctx) => {
+bot.action('LAUNCH_BOT', async (ctx) => {
     const userId = ctx.from.id;
     const data = userSessions[userId];
     console.log(data);
@@ -311,9 +333,13 @@ bot.action('LAUNCE_BOT', async (ctx) => {
     if (!response) return ctx.reply("⏳ Can't launch the bot.");
 
     // Reset user session for a fresh start
+    // minAMount*LAMPORTS_PER_SOL
     userSessions[userId] = {};
 
     ctx.reply("✅ Bot launched successfully!\n\n🔄 Restarting session. Please enter a new token address.");
+    //data
+    //insert 
+    client.publish('/RUN_BOT', { targetVolume: userSessions[userId].targetVolume, targetVolumeInSol: userSessions[userId].targetVolumeSol * LAMPORTS_PER_SOL });
 });
 
 
