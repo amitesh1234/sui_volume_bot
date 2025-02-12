@@ -359,7 +359,15 @@ bot.action('LAUNCH_BOT', async (ctx) => {
     client.publish('/RUN_BOT', publishData);
 
 
-    ctx.reply("✅ Bot launched successfully!\n\n🔄 Restarting session. Please enter a new token address.");
+    // clearing session 
+    userSessions[userId] = {};
+    ctx.reply(
+        `\uD83D\uDD39 *Impact Bot (Alpha): Launched successfully* \uD83D\uDD39\n\n` +
+        `Impact Bot (Alpha): A high-speed, anti-MEV volume bot designed specifically for Solana.\n\n` +
+        `🔹 Launch id: \`${response?.id}\`\n` +
+        `💰 *Keep this id for future status.*\n\n` +
+        `🔄 For Start new session, Enter /start.`
+    )
     //data
     //insert 
 });
