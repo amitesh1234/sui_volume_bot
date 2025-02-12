@@ -1,8 +1,17 @@
 {
     "cSpell.words": [
+        "achievedvolume",
+        "currentbatchnumber",
         "getbalanace",
+        "isactive",
+        "keypair",
+        "LAMPORTS",
+        "maxamount",
+        "minamount",
         "secretkey",
         "Solana",
-        "targetvolume"
+        "targetvolume",
+        "targetvolumeinsol",
+        "totaltransactioninitiated"
     ]
 }

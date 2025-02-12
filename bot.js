@@ -1,11 +1,14 @@
 require('dotenv').config();
 const { Telegraf, Markup } = require('telegraf');
 const BigNumber = require('bignumber.js');
-const { transactionsPerMinute, getDelayMs } = require('./constants')
+const { transactionsPerMinute, validateSolAmountRange } = require('./constants')
 const { createSBD, createData, getSingleData, updateData } = require('./Repository/DBE');
 require('./Repository/models');
-const { getSolanaBalance, generateWallet } = require("./solana_bundling/getbalanace")
-const fetch = require("node-fetch");
+const { getSolanaBalance, generateWallet } = require("./solana_bundling/getbalanace");
+
+const Faye = require('faye');
+const { LAMPORTS_PER_SOL } = require('@solana/web3.js');
+let client = new Faye.Client('http://localhost:8675/');
 
 async function getTokenInfo(tokenId) {
     const url = `https://api.dexscreener.com/latest/dex/tokens/${tokenId}`;
@@ -31,10 +34,21 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 // Temporary in-memory storage
 const userSessions = {};
 
+
+async function getSOLPrice() {
+    try {
+        const response = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=SOLUSDT");
+        const data = await response.json();
+        console.log("SOL Price:", data.price);
+        return data.price;
+    } catch (error) {
+        console.error("Error fetching SOL price:", error);
+    }
+}
+
 // Function to validate Solana token address
-const isValidSolanaAddress = (address) => {
-    return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address);
-};
+const isValidSolanaAddress = (address) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address);
+
 
 // Function to validate amount (BigNumber)
 const isValidAmount = (amount) => {
@@ -46,6 +60,7 @@ const isValidAmount = (amount) => {
     }
 };
 
+// id, publickey, privatekey, isactive, createdat
 // Step 1: Welcome Message
 bot.start((ctx) => {
     const userId = ctx.from.id;
@@ -64,6 +79,9 @@ bot.on('text', async (ctx) => {
     try {
         const userId = ctx.from.id;
         const userText = ctx.message.text.trim();
+        if (userText === "\\start")
+            return ctx.reply('❌ To Start the bot please enter /start.');
+
 
         if (!userSessions[userId]?.tokenAddress) {
             if (!isValidSolanaAddress(userText))
@@ -73,20 +91,19 @@ bot.on('text', async (ctx) => {
             if (!tokenInfo)
                 return ctx.reply("❌ Can't find token pair on exchange.");
 
-            console.log(tokenInfo);
             userSessions[userId].tokenAddress = userText;
 
             return ctx.reply(
                 '✅ Token address received!\n\n' +
-                '📨 *Input extra target Volume amount ($):*',
+                '📨 *Input target Volume amount ($):*',
                 { parse_mode: 'Markdown' }
             );
         }
 
         if (!userSessions[userId]?.targetVolume) {
-            if (!isValidAmount(userText)) {
+            if (!isValidAmount(userText))
                 return ctx.reply('❌ Invalid amount! Please enter a positive number for the target volume.');
-            }
+
 
             userSessions[userId].targetVolume = userText;
             const wallet = await getSingleData({ userid: userId.toString() }, "sol_wallet");
@@ -102,12 +119,16 @@ bot.on('text', async (ctx) => {
                 }
 
                 await createData(data, "sol_wallet");
+                const solPrice = await getSOLPrice();
 
                 userSessions[userId].depositWallet = publicKey;
                 userSessions[userId].solBalance = "0";
+                userSessions[userId].targetVolumeSol = Math.ceil(userText / solPrice);
                 return showMainTemplate(ctx, userId);
             }
 
+            const solPrice = await getSOLPrice();
+            userSessions[userId].targetVolumeSol = Math.ceil(userText / solPrice);
             userSessions[userId].depositWallet = wallet.publickey;
             userSessions[userId].solBalance = wallet.balance;
 
@@ -115,33 +136,33 @@ bot.on('text', async (ctx) => {
         }
 
         // If user is waiting for custom delay input
-        if (userSessions[userId]?.waitingForCustomDelay) {
-            console.log("delay")
-            const customDelay = parseInt(userText, 10);
+        // if (userSessions[userId]?.waitingForCustomDelay) {
+        //     const customDelay = parseInt(userText, 10);
 
-            if (isNaN(customDelay) || customDelay <= 0)
-                return ctx.reply('❌ Invalid input! Please enter a positive number for transactions per minute.');
+        //     if (isNaN(customDelay) || customDelay <= 0)
+        //         return ctx.reply('❌ Invalid input! Please enter a positive number for transactions per minute.');
 
+        //     // Store the custom delay and update the user session
+        //     userSessions[userId].delayMode = "Custom";
+        //     userSessions[userId].transactionsPerMinute = customDelay;
+        //     userSessions[userId].waitingForCustomDelay = false; // Reset state
 
-            // Store the custom delay and update the user session
-            userSessions[userId].delayMode = "Custom";
-            userSessions[userId].transactionsPerMinute = customDelay;
-            userSessions[userId].waitingForCustomDelay = false; // Reset state
-
-            // Show the updated main template
-            return showMainTemplate(ctx, userId);
-        }
+        //     // Show the updated main template
+        //     return showMainTemplate(ctx, userId);
+        // }
 
         // If user is waiting for custom delay input
         if (userSessions[userId]?.waitingForCustomSolAmount) {
-            const solAmount = parseFloat(userText); // Parse as float
 
-            if (isNaN(solAmount) || solAmount < 0.001)
-                return ctx.reply('❌ Invalid input! Please enter a valid SOL amount (minimum 0.001).');
+            const checkSolAmount = validateSolAmountRange(userText);
+            // const solAmount = parseFloat(userText); // Parse as float
+
+            if (!checkSolAmount?.valid)
+                return ctx.reply(checkSolAmount?.message || '❌ Invalid input! Please enter a valid SOL amount (minimum 0.001).');
 
 
             // Store the custom SOL amount and update the user session
-            userSessions[userId].swapSolAmount = solAmount.toFixed(3); // Ensure 3 decimal places
+            userSessions[userId].swapSolAmount = userText; // Ensure 3 decimal places
             userSessions[userId].waitingForCustomSolAmount = false; // Reset state
 
             // Show the updated main template
@@ -158,8 +179,8 @@ bot.on('text', async (ctx) => {
 // Function to show the main template with buttons in new order
 function showMainTemplate(ctx, userId) {
     let buttons = [
-        [Markup.button.callback('🚀 Launce', 'LAUNCE_BOT')],
-        [Markup.button.callback(`▶️ Delay Time (${getDelayMs(userSessions[userId]?.transactionsPerMinute || 30)})`, 'SHOW_DELAY_OPTIONS'), Markup.button.callback(`✅ Buy with ${userSessions[userId]?.swapSolAmount || '3'} SOL`, 'BUY_SOL')],
+        [Markup.button.callback('🚀 Launch', 'LAUNCH_BOT')],
+        [Markup.button.callback(`▶️ Transactions per minute (${userSessions[userId]?.transactionsPerMinute || 30})`, 'SHOW_DELAY_OPTIONS'), Markup.button.callback(`✅ Buy with min-max ${userSessions[userId]?.swapSolAmount || '3-4'} SOL`, 'BUY_SOL')],
         // [Markup.button.callback('💵 Withdraw', 'WITHDRAW'), Markup.button.callback('🔄 Refresh', 'REFRESH')],
         [Markup.button.callback('📖 Guide', 'GUIDE'), Markup.button.callback('📖 Refresh Deposit Balance', 'CHECK_BALANCE')]
     ];
@@ -170,8 +191,9 @@ function showMainTemplate(ctx, userId) {
         `✅ *Token Info:* \n` +
         `🔹 Token Address: \`${userSessions[userId]?.tokenAddress}\`\n` +
         `💰 Target Volume Amount: *$${userSessions[userId]?.targetVolume}*\n\n` +
+        `💰 Estimated Target Volume Sol AMount: *${userSessions[userId]?.targetVolumeSol || '0'} SOL*\n\n` +
         `⚙️ ${userSessions[userId]?.delayMode || "Fast"} Mode: ${userSessions[userId]?.transactionsPerMinute || "30"} transactions per min\n` +
-        `🔄 Sol swapped per TX: ${userSessions[userId]?.swapSolAmount || "3"} SOL\n\n` +
+        `🔄 Sol swapped per TX: ${userSessions[userId]?.swapSolAmount || "3-4"} SOL\n\n` +
         `⏳ Bot worked: 0 min\n` +
         `📊 Bot made: 0 Makers, 0 Txns\n\n` +
         `${userSessions[userId]?.depositWallet ? '💰 *Your Deposit Wallet:*' : ''}\n` +
@@ -193,8 +215,8 @@ bot.action('BUY_SOL', (ctx) => {
         `More SOL amount will run volume up quicker, with lower SOL amount it takes longer to achieve target volume.\n\n` +
         `⚠️ Note that the bot will never trade more than 80% of the balance in a given bundle.`,
         Markup.inlineKeyboard([
-            [Markup.button.callback('1 SOL', 'SWAP_SOL_1'), Markup.button.callback('3 SOL', 'SWAP_SOL_3')],
-            [Markup.button.callback('5 SOL', 'SWAP_SOL_5'), Markup.button.callback('Custom SOL', 'ADD_CUSTOM_SOL_SWAP')]
+            [Markup.button.callback('1-2 SOL', 'SWAP_SOL_1'), Markup.button.callback('3-4 SOL', 'SWAP_SOL_3')],
+            [Markup.button.callback('5-6 SOL', 'SWAP_SOL_5'), Markup.button.callback('Custom SOL', 'ADD_CUSTOM_SOL_SWAP')]
         ])
     );
 });
@@ -208,7 +230,8 @@ bot.action('SHOW_DELAY_OPTIONS', (ctx) => {
         `🎈 Turbo Mode: ${transactionsPerMinute?.Turbo} transactions per min\n\n` +
         `More transactions per minute will run volume up quicker, lower tx per minute while last longer, but take longer to achieve target volume.\n`,
         Markup.inlineKeyboard([
-            [Markup.button.callback('🟢 Regular', 'DELAY_Regular'), Markup.button.callback('🔵 Fast', 'DELAY_Fast'), Markup.button.callback('🔴 Turbo', 'DELAY_Turbo'), Markup.button.callback('⚙️ Custom', 'ADD_CUSTOM_DELAY')]
+            // [Markup.button.callback('🟢 Regular', 'DELAY_Regular'), Markup.button.callback('🔵 Fast', 'DELAY_Fast'), Markup.button.callback('🔴 Turbo', 'DELAY_Turbo'), Markup.button.callback('⚙️ Custom', 'ADD_CUSTOM_DELAY')]
+            [Markup.button.callback('🟢 Regular', 'DELAY_Regular'), Markup.button.callback('🔵 Fast', 'DELAY_Fast'), Markup.button.callback('🔴 Turbo', 'DELAY_Turbo')]
         ])
     );
 });
@@ -248,7 +271,6 @@ bot.action(/^DELAY_/, async (ctx) => {
         ctx.reply("📨 Input transactions per min.")
     }
     const capitalizedMode = mode.charAt(0).toUpperCase() + mode.slice(1);
-    console.log("mode", capitalizedMode);
 
     if (!userSessions[userId]) userSessions[userId] = {}; // Ensure session exists
 
@@ -259,22 +281,20 @@ bot.action(/^DELAY_/, async (ctx) => {
 
 });
 
-bot.action('ADD_CUSTOM_DELAY', async (ctx) => {
-    const userId = ctx.from.id;
-    if (!userSessions[userId]) return; // Ensure session exists
-    userSessions[userId].waitingForCustomDelay = true;
+// bot.action('ADD_CUSTOM_DELAY', async (ctx) => {
+//     const userId = ctx.from.id;
+//     if (!userSessions[userId]) return; // Ensure session exists
+//     userSessions[userId].waitingForCustomDelay = true;
 
-    ctx.reply('⏳ Please enter your custom transactions per minute (e.g., 50):');
+//     ctx.reply('⏳ Please enter your custom transactions per minute (e.g., 50):');
 
-});
+// });
 
 // Handle delay time selection
 bot.action(/^SWAP_SOL_/, async (ctx) => {
     const userId = ctx.from.id;
     const solAmount = ctx?.update?.callback_query?.data.split('_')[2];
 
-    // todo 
-    // SWAP_CUSTOM_SOL
     if (!userSessions[userId]) userSessions[userId] = {}; // Ensure session exists
 
     userSessions[userId].swapSolAmount = solAmount;
@@ -286,11 +306,11 @@ bot.action('ADD_CUSTOM_SOL_SWAP', async (ctx) => {
     if (!userSessions[userId]) return; // Ensure session exists
     userSessions[userId].waitingForCustomSolAmount = true;
 
-    ctx.reply('⏳ Please enter the amount of SOL to use in buying.(e.g., 10):');
+    ctx.reply('⏳ Please enter the amount range of SOL to use in buying.(e.g., 3-7):');
 
 });
 
-bot.action('LAUNCE_BOT', async (ctx) => {
+bot.action('LAUNCH_BOT', async (ctx) => {
     const userId = ctx.from.id;
     const data = userSessions[userId];
     console.log(data);
@@ -304,17 +324,44 @@ bot.action('LAUNCE_BOT', async (ctx) => {
         tokenaddress: data?.tokenAddress,
         targetvolume: data?.targetVolume,
         transactions: data?.transactionsPerMinute || '30', //default
-        amount: data?.swapSolAmount || '3' //default
+        amount: data?.swapSolAmount || '3-4', //default
+        targetvolumeinsol: data?.targetVolumeSol,
+        status: 'Launched'
     }
     console.log(collectingData);
 
     const response = await createSBD(collectingData);
-    if (!response) return ctx.reply("⏳ Can't launch the bot.");
+    if (!response?.id) return ctx.reply("⏳ Can't launch the bot.");
 
     // Reset user session for a fresh start
-    userSessions[userId] = {};
+    // minAMount*LAMPORTS_PER_SOL
+    // userSessions[userId] = {};
+    const ssa = validateSolAmountRange(collectingData?.amount)
+    if (!ssa?.valid) return ctx.reply("⏳ Can't launch the bot.");
+
+    const wallet = await getSingleData({ userid: userId.toString() }, "sol_wallet")
+    if (!wallet.secretkey) return ctx.reply("⏳ Can't launch the bot.");
+
+    const publishData = {
+        targetVolume: collectingData?.targetvolume,
+        targetVolumeInSol: collectingData?.targetvolumeinsol * LAMPORTS_PER_SOL,
+        minAmount: Number(ssa?.min) * LAMPORTS_PER_SOL,
+        maxAmount: Number(ssa?.max) * LAMPORTS_PER_SOL,
+        transactionsPerMinute: collectingData?.transactions,
+        secretKey: wallet.secretkey,
+        token: collectingData?.tokenaddress,
+        launchId: response?.id
+    }
+
+    console.log("publishData", publishData);
+
+
+    client.publish('/RUN_BOT', publishData);
+
 
     ctx.reply("✅ Bot launched successfully!\n\n🔄 Restarting session. Please enter a new token address.");
+    //data
+    //insert 
 });
 
 

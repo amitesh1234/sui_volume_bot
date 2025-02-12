@@ -28,6 +28,10 @@ module.exports = function (sequelize, DataTypes) {
       type: DataTypes.STRING,
       allowNull: true
     },
+    targetvolumeinsol: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
     transactions: {
       type: DataTypes.STRING,
       allowNull: true
@@ -35,6 +39,25 @@ module.exports = function (sequelize, DataTypes) {
     amount: {
       type: DataTypes.STRING,
       allowNull: true
+    },
+    status: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    achievedvolume: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      defaultValue: "0"
+    },
+    currentbatchnumber: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      defaultValue: "0"
+    },
+    totaltransactioninitiated: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      defaultValue: "0"
     },
   }, {
     tableName: "sol_bot_details", // Make sure this matches your table name

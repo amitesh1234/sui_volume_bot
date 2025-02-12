@@ -26,6 +26,29 @@ const getDelayMs = (t) => {
     }
 };
 
+const validateSolAmountRange = (input) => {
+    console.log("validateSolAmountRange",input);
+    const minSolAmount = parseFloat(0.001);
+    const maxSolAmount = parseFloat(20);
+    const rangePattern = /^(\d+(\.\d+)?)-(\d+(\.\d+)?)$/;
+    const match = input.match(rangePattern);
+
+    if (!match)
+        return { valid: false, message: '❌ Invalid format! Use min-max (e.g., 1-2, 30-50).' };
+
+
+    let min = parseFloat(match[1]);
+    let max = parseFloat(match[3]);
+
+    if (isNaN(min) || isNaN(max) || min < Number(minSolAmount) || max > Number(maxSolAmount) || min >= max) {
+        return { valid: false, message: `❌ Invalid range! Ensure min is at least ${minSolAmount}, max is at most ${maxSolAmount}, and min < max.` };
+    }
+
+    return { valid: true, min, max };
+}
+
+const getBatchSize = (transactionsPerMinute) => parseInt(transactionsPerMinute) === 60 ? 5 : parseInt(transactionsPerMinute) === 30 ? 3 : 1;
+
 
 
 module.exports = {
@@ -35,6 +58,9 @@ module.exports = {
     wsolAddress,
     slippage: 4,
     tax: 0.5,
+    minSolAmount: 0.001,
     transactionsPerMinute,
-    getDelayMs
+    getDelayMs,
+    validateSolAmountRange,
+    getBatchSize
 }

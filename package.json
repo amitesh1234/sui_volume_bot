@@ -6,6 +6,8 @@
   "scripts": {
     "start": "nodemon index_single_swap_transfer.js",
     "dev": "nodemon bot.js",
+    "faye": "nodemon faye_server.js",
+    "subscriber": "nodemon faye_subscriber.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
@@ -22,6 +24,7 @@
     "bn.js": "^5.2.1",
     "bs58": "^6.0.0",
     "dotenv": "^16.4.7",
+    "faye": "^1.4.0",
     "node-cache": "^5.1.2",
     "nodemon": "^3.1.9",
     "pg": "^8.13.1",
