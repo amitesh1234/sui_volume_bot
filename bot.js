@@ -2,8 +2,9 @@ require('dotenv').config();
 const { Telegraf, Markup } = require('telegraf');
 const BigNumber = require('bignumber.js');
 const { transactionsPerMinute, getDelayMs } = require('./constants')
-const { createSBD } = require('./Repository/DBE');
+const { createSBD, createData, getSingleData, updateData } = require('./Repository/DBE');
 require('./Repository/models');
+const { getSolanaBalance, generateWallet } = require("./solana_bundling/getbalanace")
 
 async function getTokenInfo(tokenId) {
     const url = `https://api.dexscreener.com/latest/dex/tokens/${tokenId}`;
@@ -87,6 +88,28 @@ bot.on('text', async (ctx) => {
             }
 
             userSessions[userId].targetVolume = userText;
+            const wallet = await getSingleData({ userid: userId.toString() }, "sol_wallet");
+
+            if (!wallet?.publickey) {
+                const { publicKey, secretKey } = await generateWallet();
+
+                const data = {
+                    userid: userId,
+                    publickey: publicKey,
+                    secretkey: secretKey,
+                    balance: "0"
+                }
+
+                await createData(data, "sol_wallet");
+
+                userSessions[userId].depositWallet = publicKey;
+                userSessions[userId].solBalance = "0";
+                return showMainTemplate(ctx, userId);
+            }
+
+            userSessions[userId].depositWallet = wallet.publickey;
+            userSessions[userId].solBalance = wallet.balance;
+
             return showMainTemplate(ctx, userId);
         }
 
@@ -111,19 +134,19 @@ bot.on('text', async (ctx) => {
         // If user is waiting for custom delay input
         if (userSessions[userId]?.waitingForCustomSolAmount) {
             const solAmount = parseFloat(userText); // Parse as float
-        
-            if (isNaN(solAmount) || solAmount < 0.001) 
+
+            if (isNaN(solAmount) || solAmount < 0.001)
                 return ctx.reply('❌ Invalid input! Please enter a valid SOL amount (minimum 0.001).');
-            
-        
+
+
             // Store the custom SOL amount and update the user session
             userSessions[userId].swapSolAmount = solAmount.toFixed(3); // Ensure 3 decimal places
             userSessions[userId].waitingForCustomSolAmount = false; // Reset state
-        
+
             // Show the updated main template
             return showMainTemplate(ctx, userId);
         }
-        
+
 
     } catch (error) {
         console.error('Error:', error);
@@ -137,7 +160,7 @@ function showMainTemplate(ctx, userId) {
         [Markup.button.callback('🚀 Launce', 'LAUNCE_BOT')],
         [Markup.button.callback(`▶️ Delay Time (${getDelayMs(userSessions[userId]?.transactionsPerMinute || 30)})`, 'SHOW_DELAY_OPTIONS'), Markup.button.callback(`✅ Buy with ${userSessions[userId]?.swapSolAmount || '3'} SOL`, 'BUY_SOL')],
         // [Markup.button.callback('💵 Withdraw', 'WITHDRAW'), Markup.button.callback('🔄 Refresh', 'REFRESH')],
-        [Markup.button.callback('📖 Guide', 'GUIDE')]
+        [Markup.button.callback('📖 Guide', 'GUIDE'), Markup.button.callback('📖 Refresh Deposit Balance', 'CHECK_BALANCE')]
     ];
 
     ctx.reply(
@@ -150,9 +173,9 @@ function showMainTemplate(ctx, userId) {
         `🔄 Sol swapped per TX: ${userSessions[userId]?.swapSolAmount || "3"} SOL\n\n` +
         `⏳ Bot worked: 0 min\n` +
         `📊 Bot made: 0 Makers, 0 Txns\n\n` +
-        `💰 *Your Deposit Wallet:*\n` +
-        `\`97SLkxxCVjdBk5WSUvsaKmPF95H9Ks5HD6pSfDJmNCgu\`\n` +
-        `💲 Balance: 0 SOL\n\n` +
+        `${userSessions[userId]?.depositWallet ? '💰 *Your Deposit Wallet:*' : ''}\n` +
+        `\`${userSessions[userId]?.depositWallet || ''}\`\n` +
+        `💲 Balance: ${userSessions[userId].solBalance || "0"} SOL\n\n` +
         `⚠️ The minimum deposit to reach the target volume is 4.1 SOL\n` +
         `⏳ The estimated time to reach the target volume is 1.5 min`,
         {
@@ -291,6 +314,28 @@ bot.action('LAUNCE_BOT', async (ctx) => {
     userSessions[userId] = {};
 
     ctx.reply("✅ Bot launched successfully!\n\n🔄 Restarting session. Please enter a new token address.");
+});
+
+
+bot.action('CHECK_BALANCE', async (ctx) => {
+    const userId = ctx.from.id;
+
+    const data = userSessions[userId];
+    let dW = data?.depositWallet;
+    if (!data?.depositWallet) {
+        const walletInfo = await getSingleData({ userid: userId.toString() }, "sol_wallet")
+        if (!walletInfo?.publickey) return ctx.reply("⏳ Can't find wallet info, please try again later.")
+        dW = walletInfo?.publickey;
+    }
+
+    const balance = await getSolanaBalance(dW);
+    if (!balance) return ctx.reply("⏳ Some issue occurred, please try again later.")
+
+    updateData({ userid: userId }, { balance: balance }, "sol_wallet")
+    if (!userSessions[userId]) userSessions[userId] = {}; // Ensure session exists
+
+    userSessions[userId].solBalance = balance;
+    showMainTemplate(ctx, userId);
 });
 
 // Start the bot
