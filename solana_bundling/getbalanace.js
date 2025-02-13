@@ -24,8 +24,8 @@ const generateWallet = () => {
         const secretKey = Buffer.from(keypair.secretKey).toString("hex"); // Use HEX format for safer storage
 
         console.log("New Wallet Generated:");
-        console.log("Public Key:", publicKey);
-        console.log("Secret Key (DO NOT SHARE):", secretKey);
+        // console.log("Public Key:", publicKey);
+        // console.log("Secret Key (DO NOT SHARE):", secretKey);
 
         return { publicKey, secretKey, keypair };
     } catch (error) {
