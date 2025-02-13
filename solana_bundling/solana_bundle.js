@@ -3,7 +3,7 @@ const fetch = require("node-fetch");
 const { Keypair, PublicKey, SystemProgram, LAMPORTS_PER_SOL, TransactionInstruction, Transaction, sendAndConfirmTransaction, AddressLookupTableProgram } = require("@solana/web3.js");
 const { getAssociatedTokenAddressSync, createAssociatedTokenAccountIdempotentInstruction, createCloseAccountInstruction, TOKEN_PROGRAM_ID, createInitializeAccountInstruction, getAssociatedTokenAddress, createAssociatedTokenAccount } = require("@solana/spl-token");
 const { connection, privateKey, wsolAddress, slippage, tax, connection2, getBatchSize } = require('../constants.js');
-const { makeVersionedTransactionAndSign2 } = require("./transactionHelper.js");
+const { makeVersionedTransactionAndSign2, makeVersionedTransactionAndSign } = require("./transactionHelper.js");
 // const { basicBundle, basicBundleJito } = require('../jito.js');
 const { nu64, struct, u8 } = require('buffer-layout')
 const crypto = require("crypto");
@@ -469,7 +469,7 @@ const volumeBundle = async (pairAddress, minAmount, maxAmount, bundleSize, payer
         const amounts = Array.from({ length: bundleSize }, () => getRandomAmount(minAmount, maxAmount));
 
         // const promises = Array.from({ length: bundleSize }, (_, index) => buildTx(minAmount, maxAmount, payer, feepayer, poolKeys, otherAccountAddress));
-        const promises = amounts.map(amount => buildTx(amount, payer, feepayer, poolKeys, otherAccountAddress));
+        const promises = amounts.map((amount, index) => buildTx(amount, payer, feepayer[index % feepayer.length], poolKeys, otherAccountAddress));
         const totalAmount = amounts.reduce((sum, amount) => sum + amount, 0);
         const [jitoIx, recentBlockhashForSwap] = await Promise.all([getJitoTransferIx(payer), connection2.getLatestBlockhash()]);
         const instructions = await Promise.all(promises);
@@ -478,9 +478,9 @@ const volumeBundle = async (pairAddress, minAmount, maxAmount, bundleSize, payer
         const txns = await Promise.all(
             instructions.map((ix, index) => makeVersionedTransactionAndSign2(
                 ix,
-                feepayer,
+                feepayer[index % feepayer.length],
                 recentBlockhashForSwap.blockhash,
-                [feepayer, payer],
+                [feepayer[index % feepayer.length], payer],
                 lookupTableAccount
             ))
         );
@@ -552,28 +552,30 @@ const runVolumeBot = async (token, minAmount, maxAmount, transactionsPerMinute, 
         const payer = Keypair.fromSecretKey(Buffer.from(secretKey, "hex"));
 
         const payerWallets = await getData({ isactive: true }, "sol_payer_wallet");
-        console.log(payer, payerWallets);
+        // console.log(payer, payerWallets);
         if (!payerWallets?.length) throw new Error("No active payer wallet found.");
-        const feePayerArray = [payerWallets];
+        // const feePayerArray = [payerWallets];
 
         // other account details
         const otherAccountAddress = await getAssociatedTokenAddress(new PublicKey(token), payer.publicKey, false);
-        const accountDetails = await connection.getAccountInfo(otherAccountAddress, 'confirmed');
+        const [accountDetails, recentBlock] = await Promise.all([connection.getAccountInfo(otherAccountAddress, 'confirmed'), connection2.getLatestBlockhash()]);
         const initialTx = new Transaction();
+        let initalIxs = [];
 
         if (!accountDetails) {
             console.log("Creating associated token account");
+            const ix1 = createAssociatedTokenAccountIdempotentInstruction(
+                payer.publicKey,
+                otherAccountAddress,
+                payer.publicKey,
+                OTHER_MINT_ADDRESS
 
+            )
             // TODO
             initialTx.add(
-                createAssociatedTokenAccountIdempotentInstruction(
-                    feepayer.publicKey,
-                    otherAccountAddress,
-                    payer.publicKey,
-                    OTHER_MINT_ADDRESS
-
-                )
-            )
+                ix1
+            );
+            initalIxs.push(ix1);
             // console.log(tx)
             // await sendAndConfirmTransaction(connection2, initialTx, [feepayer, payer]); //todo remove this later when adddress lookup table code is uncommented
 
@@ -585,15 +587,23 @@ const runVolumeBot = async (token, minAmount, maxAmount, transactionsPerMinute, 
         const poolKeys = await getPoolData(pairAddress, connection);
         if (!poolKeys) throw new Error("Cannot find pool data");
 
-        const addressLookupTxIx = await getAddressLookupTxIs(poolKeys, payer, feepayer);
+        const addressLookupTxIx = await getAddressLookupTxIs(poolKeys, payer, payer);
 
         initialTx.add(addressLookupTxIx?.ix[0], addressLookupTxIx?.ix[1]);
-        console.log("Sending initial tx")
-        await sendAndConfirmTransaction(connection2, initialTx, [feepayer, payer]);
-
-        // const addressLookupTxIx = {
-        //     lookupTableAddress: new PublicKey("C66iQeHWjVdwhPfPZRhLoieWWskkJXSV21QuY2BZCx1V")
-        // }
+        initalIxs.push(addressLookupTxIx?.ix[0]);
+        initalIxs.push(addressLookupTxIx?.ix[1]);
+        console.log("Sending initial tx");
+        const finalInitialTxns = await Promise.all(
+            initalIxs.map((ix, index) => makeVersionedTransactionAndSign(
+                ix,
+                payer,
+                recentBlock.blockhash,
+                [payer]
+            ))
+        );
+        return;
+        await basicBundleJito(finalInitialTxns);
+        // await sendAndConfirmTransaction(connection2, initialTx, [feepayer, payer]);
 
         console.log("Geting lookup table data");
         const lookupTableAccount = await connection2.getAddressLookupTable(addressLookupTxIx?.lookupTableAddress)
@@ -613,9 +623,14 @@ const runVolumeBot = async (token, minAmount, maxAmount, transactionsPerMinute, 
 
         console.log("Running volume Bot...");
         while (true) {
-            const currentFeePayer = feePayerArray[count % feePayerArray.length];
+            let currentFeePayers = []
+            for (let k = 0; k < batchSize; k++) {
+                currentFeePayers.push(Keypair.fromSecretKey(Buffer.from(payerWallets[count % payerWallets.length], "hex")));
+                count += 1;
+            }
+            // const currentFeePayer = feePayerArray[count % feePayerArray.length];
 
-            let volume = volumeBundle(pairAddress, minAmount, maxAmount, batchSize, payer, currentFeePayer, poolKeys, otherAccountAddress, addressLookupTxIx?.lookupTableAddress, lookupTableAccount);
+            let volume = volumeBundle(pairAddress, minAmount, maxAmount, batchSize, payer, currentFeePayers, poolKeys, otherAccountAddress, addressLookupTxIx?.lookupTableAddress, lookupTableAccount);
             count += 1;
             achievedVolume += volume;
             totalTransactionCount += batchSize;
@@ -655,7 +670,7 @@ const runVolumeBot = async (token, minAmount, maxAmount, transactionsPerMinute, 
 
 
 
-// runVolumeBot()
+// runVolumeBot("78G3BRTnvsRzoT5r9Keqz48Y289wSXbGAxggcKvQpump", 1000000, 150000, 30, "", 1, "")
 
 module.exports = {
     getTokenInfo,
