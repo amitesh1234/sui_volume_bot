@@ -199,8 +199,9 @@ function showMainTemplate(ctx, userId) {
         `${userSessions[userId]?.depositWallet ? '💰 *Your Deposit Wallet:*' : ''}\n` +
         `\`${userSessions[userId]?.depositWallet || ''}\`\n` +
         `💲 Balance: ${userSessions[userId].solBalance || "0"} SOL\n\n` +
-        `⚠️ The minimum deposit to reach the target volume is 4.1 SOL\n` +
-        `⏳ The estimated time to reach the target volume is 1.5 min`,
+        `💲 MinimumB Balance Required for bot to run: 0.5 SOL`,
+        // `⚠️ The minimum deposit to reach the target volume is 4.1 SOL\n` +
+        // `⏳ The estimated time to reach the target volume is 1.5 min`,
         {
             parse_mode: 'Markdown',
             ...Markup.inlineKeyboard(buttons)
@@ -316,7 +317,7 @@ bot.action('LAUNCH_BOT', async (ctx) => {
     console.log(data);
     if (!data || !data?.tokenAddress || !data?.targetVolume)
         return ctx.reply("⏳ Can't launch the bot.");
-
+    
     const collectingData = {
         userid: userId,
         fullname: ctx.from.first_name || "" + " " + ctx.from.last_name || "",
@@ -340,8 +341,10 @@ bot.action('LAUNCH_BOT', async (ctx) => {
     if (!ssa?.valid) return ctx.reply("⏳ Can't launch the bot.");
 
     const wallet = await getSingleData({ userid: userId.toString() }, "sol_wallet")
-    if (!wallet.secretkey) return ctx.reply("⏳ Can't launch the bot.");
-
+    if (!wallet?.secretkey) return ctx.reply("⏳ Can't launch the bot.");
+    if(await getSolanaBalance(wallet?.secretkey) < 0.5) {
+        return ctx.reply("⏳ Balance less than 0.5 Sol, Please topup the wallet to start the bot!");
+    }
     const publishData = {
         targetVolume: collectingData?.targetvolume,
         targetVolumeInSol: collectingData?.targetvolumeinsol * LAMPORTS_PER_SOL,
