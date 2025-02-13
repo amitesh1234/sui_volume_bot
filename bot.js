@@ -178,11 +178,15 @@ bot.on('text', async (ctx) => {
 
 // Function to show the main template with buttons in new order
 function showMainTemplate(ctx, userId) {
+
+    const LaunchButton = [Markup.button.callback('🚀 Launch', 'LAUNCH_BOT')]
+    const stopButton = [Markup.button.callback('🛑 Stop', 'STOP_BOT')];
+
     let buttons = [
-        [Markup.button.callback('🚀 Launch', 'LAUNCH_BOT')],
+        userSessions[userId]?.status === "Launched" ? stopButton : LaunchButton,
         [Markup.button.callback(`▶️ Transactions per minute (${userSessions[userId]?.transactionsPerMinute || 30})`, 'SHOW_DELAY_OPTIONS'), Markup.button.callback(`✅ Buy with min-max ${userSessions[userId]?.swapSolAmount || '3-4'} SOL`, 'BUY_SOL')],
         // [Markup.button.callback('💵 Withdraw', 'WITHDRAW'), Markup.button.callback('🔄 Refresh', 'REFRESH')],
-        [Markup.button.callback('📖 Guide', 'GUIDE'), Markup.button.callback('📖 Refresh Deposit Balance', 'CHECK_BALANCE')]
+        [Markup.button.callback('📖 Guide', 'GUIDE'), Markup.button.callback('📖 Refresh', 'REFRESH_BOT_DETAILS')]
     ];
 
     ctx.reply(
@@ -194,12 +198,14 @@ function showMainTemplate(ctx, userId) {
         `💰 Estimated Target Volume Sol AMount: *${userSessions[userId]?.targetVolumeSol || '0'} SOL*\n\n` +
         `⚙️ ${userSessions[userId]?.delayMode || "Fast"} Mode: ${userSessions[userId]?.transactionsPerMinute || "30"} transactions per min\n` +
         `🔄 Sol swapped per TX: ${userSessions[userId]?.swapSolAmount || "3-4"} SOL\n\n` +
-        `⏳ Bot worked: 0 min\n` +
-        `📊 Bot made: 0 Makers, 0 Txns\n\n` +
+        // `⏳ Bot worked: 0 min\n` +
+        `⏳ Bot current Batch Number: ${userSessions[userId]?.currentBatch || 0} \n` +
+        `📊 Bot made: ${userSessions[userId]?.achievedVolume || 0} Sol Volume achieved. , ${userSessions[userId]?.transactionDone || 0} Txns\n\n` +
         `${userSessions[userId]?.depositWallet ? '💰 *Your Deposit Wallet:*' : ''}\n` +
         `\`${userSessions[userId]?.depositWallet || ''}\`\n` +
-        `💲 Balance: ${userSessions[userId].solBalance || "0"} SOL\n\n` +
-        `💲 MinimumB Balance Required for bot to run: 0.5 SOL`,
+        `💲 Balance: ${userSessions[userId]?.solBalance || "0"} SOL\n\n` +
+        `💲 MinimumB Balance Required for bot to run: 0.5 SOL\n\n` +
+        ` ${userSessions[userId]?.status === "Launched" ? "🟢 " + userSessions[userId]?.status : userSessions[userId]?.status || ""}`,
         // `⚠️ The minimum deposit to reach the target volume is 4.1 SOL\n` +
         // `⏳ The estimated time to reach the target volume is 1.5 min`,
         {
@@ -317,7 +323,7 @@ bot.action('LAUNCH_BOT', async (ctx) => {
     console.log(data);
     if (!data || !data?.tokenAddress || !data?.targetVolume)
         return ctx.reply("⏳ Can't launch the bot.");
-    
+
     const collectingData = {
         userid: userId,
         fullname: ctx.from.first_name || "" + " " + ctx.from.last_name || "",
@@ -331,8 +337,7 @@ bot.action('LAUNCH_BOT', async (ctx) => {
     }
     console.log(collectingData);
 
-    const response = await createSBD(collectingData);
-    if (!response?.id) return ctx.reply("⏳ Can't launch the bot.");
+    
 
     // Reset user session for a fresh start
     // minAMount*LAMPORTS_PER_SOL
@@ -342,9 +347,12 @@ bot.action('LAUNCH_BOT', async (ctx) => {
 
     const wallet = await getSingleData({ userid: userId.toString() }, "sol_wallet")
     if (!wallet?.secretkey) return ctx.reply("⏳ Can't launch the bot.");
-    if(await getSolanaBalance(wallet?.secretkey) < 0.5) {
-        return ctx.reply("⏳ Balance less than 0.5 Sol, Please topup the wallet to start the bot!");
-    }
+    if (await getSolanaBalance(wallet?.secretkey) < 0.5)
+        return ctx.reply("⏳ Balance less than 0.5 Sol, Please top up the wallet to start the bot!");
+
+    const response = await createSBD(collectingData);
+    if (!response?.id) return ctx.reply("⏳ Can't launch the bot.");
+    
     const publishData = {
         targetVolume: collectingData?.targetvolume,
         targetVolumeInSol: collectingData?.targetvolumeinsol * LAMPORTS_PER_SOL,
@@ -361,25 +369,41 @@ bot.action('LAUNCH_BOT', async (ctx) => {
 
     client.publish('/RUN_BOT', publishData);
 
-
+    userSessions[userId].status = 'Launched';
+    userSessions[userId].sessionId = response?.id;
     // clearing session 
-    userSessions[userId] = {};
-    ctx.reply(
-        `\uD83D\uDD39 *Impact Bot (Alpha): Launched successfully* \uD83D\uDD39\n\n` +
-        `Impact Bot (Alpha): A high-speed, anti-MEV volume bot designed specifically for Solana.\n\n` +
-        `🔹 Launch id: \`${response?.id}\`\n` +
-        `💰 *Keep this id for future status.*\n\n` +
-        `🔄 For Start new session, Enter /start.`
-    )
+    // userSessions[userId] = {};
+    // ctx.reply(
+    //     `\uD83D\uDD39 *Impact Bot (Alpha): Launched successfully* \uD83D\uDD39\n\n` +
+    //     `Impact Bot (Alpha): A high-speed, anti-MEV volume bot designed specifically for Solana.\n\n` +
+    //     `🔹 Launch id: \`${response?.id}\`\n` +
+    //     `💰 *Keep this id for future status.*\n\n` +
+    //     `🔄 For Start new session, Enter /start.`
+    // )
+    showMainTemplate(ctx, userId)
     //data
     //insert 
 });
 
 
-bot.action('CHECK_BALANCE', async (ctx) => {
+bot.action('REFRESH_BOT_DETAILS', async (ctx) => {
     const userId = ctx.from.id;
 
     const data = userSessions[userId];
+
+    if (data?.sessionId && data?.status === "Launched") {
+        const sessionData = await getSingleData({ id: data?.sessionId }, "sol_bot_details");
+        console.log(sessionData);
+        if (!sessionData) return showMainTemplate(ctx, userId)
+        userSessions[userId].tokenAddress = sessionData?.tokenaddress;
+        userSessions[userId].targetVolume = sessionData?.targetvolume;
+        userSessions[userId].targetVolumeSol = sessionData?.targetvolumeinsol;
+        userSessions[userId].transactionsPerMinute = sessionData?.transactions;
+        userSessions[userId].swapSolAmount = sessionData?.amount;
+        userSessions[userId].transactionDone = sessionData?.totaltransactioninitiated;
+        userSessions[userId].currentBatch = sessionData?.currentbatchnumber;
+        userSessions[userId].achievedVolume = sessionData?.achievedvolume;
+    }
     let dW = data?.depositWallet;
     if (!data?.depositWallet) {
         const walletInfo = await getSingleData({ userid: userId.toString() }, "sol_wallet")
@@ -394,6 +418,22 @@ bot.action('CHECK_BALANCE', async (ctx) => {
 
     userSessions[userId].solBalance = balance;
     showMainTemplate(ctx, userId);
+});
+
+bot.action('STOP_BOT', async (ctx) => {
+    const userId = ctx.from.id;
+
+    const data = userSessions[userId];
+    if (!data?.sessionId || data?.status !== "Launched")
+        return ctx.reply("Sorry no data found.");
+
+    const response = await updateData({ status: "ForceStop" }, { id: data?.sessionId }, "sol_bot_details")
+    if (response?.length && response[0] === 0) return ctx.reply("Sorry failed to stop bot");
+    // clearing session.
+    userSessions[userId] = {}
+    return ctx.reply(`Your bot has been stopped.\n\n Want to start new session press /start.`)
+
+
 });
 
 // Start the bot
