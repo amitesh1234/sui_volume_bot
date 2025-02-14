@@ -524,7 +524,7 @@ const volumeBundle = async (pairAddress, minAmount, maxAmount, bundleSize, payer
 
         // }
 
-        return totalAmount + (totalAmount * (slippage / 100)).toFixed(2);
+        return totalAmount + Number((totalAmount - (totalAmount * (slippage / 100))).toFixed(2));
 
     } catch (err) {
         console.log("Error in [volumeBundle]: ", err);

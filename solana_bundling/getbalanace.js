@@ -1,13 +1,14 @@
 const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL } = require("@solana/web3.js");
+const { connection3, connection2 } = require("../constants");
 
 // Initialize a connection to the Solana blockchain
-const connection = new Connection("https://api.mainnet-beta.solana.com", "confirmed");
+// const connection = new Connection("https://api.mainnet-beta.solana.com", "confirmed");
 
 // Function to check the balance of a Solana wallet
 const getSolanaBalance = async (publicKey) => {
     try {
         const walletAddress = new PublicKey(publicKey);
-        const balance = await connection.getBalance(walletAddress);
+        const balance = await connection2.getBalance(walletAddress);
         console.log(`Balance for address ${publicKey}: ${balance / LAMPORTS_PER_SOL} SOL`);
         return (balance / LAMPORTS_PER_SOL).toString();
     } catch (error) {
