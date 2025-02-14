@@ -123,12 +123,12 @@ bot.on('text', async (ctx) => {
 
                 userSessions[userId].depositWallet = publicKey;
                 userSessions[userId].solBalance = "0";
-                userSessions[userId].targetVolumeSol = Math.ceil((userText / solPrice)*100)/100;
+                userSessions[userId].targetVolumeSol = Math.ceil((userText / solPrice) * 100) / 100;
                 return showMainTemplate(ctx, userId);
             }
 
             const solPrice = await getSOLPrice();
-            userSessions[userId].targetVolumeSol = Math.ceil((userText / solPrice)*100)/100;
+            userSessions[userId].targetVolumeSol = Math.ceil((userText / solPrice) * 100) / 100;
             userSessions[userId].depositWallet = wallet.publickey;
             userSessions[userId].solBalance = wallet.balance;
 
@@ -195,12 +195,15 @@ function showMainTemplate(ctx, userId) {
         `✅ *Token Info:* \n` +
         `🔹 Token Address: \`${userSessions[userId]?.tokenAddress}\`\n` +
         `💰 Target Volume Amount: *$${userSessions[userId]?.targetVolume}*\n\n` +
-        `💰 Estimated Target Volume Sol AMount: *${userSessions[userId]?.targetVolumeSol || '0'} SOL*\n\n` +
+        `💰 Estimated Target Volume Sol AMount: *${userSessions[userId]?.targetVolumeSol || '0'} SOL*\n` +
+        `💰 Estimated Transaction needed: *${userSessions[userId]?.expectedNumberOfTransactions + ' TXN.' || 'Not calculated yet.'}*\n` +
+
         `⚙️ ${userSessions[userId]?.delayMode || "Fast"} Mode: ${userSessions[userId]?.transactionsPerMinute || "30"} transactions per min\n` +
         `🔄 Sol swapped per TX: ${userSessions[userId]?.swapSolAmount || "3-4"} SOL\n\n` +
         // `⏳ Bot worked: 0 min\n` +
-        `⏳ Bot current Batch Number: ${userSessions[userId]?.currentBatch || 0} \n` +
-        `📊 Bot made: ${userSessions[userId]?.achievedVolume || 0} Sol Volume achieved. , ${userSessions[userId]?.transactionDone || 0} Txns\n\n` +
+        `⏳ Bot current batch number: ${userSessions[userId]?.currentBatch || 0} \n` +
+        `⏳ Target Achieved: ${userSessions[userId]?.achievedVolume || 0} Sol\n` +
+        `📊 Bot made: ${userSessions[userId]?.transactionDone || 0} Txns\n\n` +
         `${userSessions[userId]?.depositWallet ? '💰 *Your Deposit Wallet:*' : ''}\n` +
         `\`${userSessions[userId]?.depositWallet || ''}\`\n` +
         `💲 Balance: ${userSessions[userId]?.solBalance || "0"} SOL\n\n` +
@@ -335,7 +338,7 @@ bot.action('LAUNCH_BOT', async (ctx) => {
         targetvolumeinsol: data?.targetVolumeSol,
         status: 'Launched'
     }
-    
+
 
     const response = await createSBD(collectingData);
     if (!response?.id) return ctx.reply("⏳ Can't launch the bot.");
@@ -349,16 +352,15 @@ bot.action('LAUNCH_BOT', async (ctx) => {
     const wallet = await getSingleData({ userid: userId.toString() }, "sol_wallet")
     if (!wallet?.secretkey) return ctx.reply("⏳ Can't launch the bot.");
     const recentUserSolBalance = await getSolanaBalance(wallet?.publickey);
-    if(recentUserSolBalance < Number(ssa?.max)) {
+    if (recentUserSolBalance < Number(ssa?.max))
         return ctx.reply(`⏳ Balance less than max transaction size set by you!`);
 
-    }
     // if (recentUserSolBalance < minSolBalance) {
-    //     return ctx.reply(`⏳ Balance less than ${minSolBalance} SOL, Please topup the wallet to start the bot!`);
+    //     return ctx.reply(`⏳ Balance less than ${minSolBalance} SOL, Please top up the wallet to start the bot!`);
     // }
-    const expectedNumberofTransactions = Math.ceil(collectingData?.targetvolumeinsol / ((Number(ssa?.min) + Number(ssa?.max)) / 2));
-    const reqBalance = (averageFee * expectedNumberofTransactions) + (averageJitofee * Math.floor(expectedNumberofTransactions / 2));
-    console.log(expectedNumberofTransactions, reqBalance, recentUserSolBalance);
+    const expectedNumberOfTransactions = Math.ceil(collectingData?.targetvolumeinsol / ((Number(ssa?.min) + Number(ssa?.max)) / 2));
+    const reqBalance = (averageFee * expectedNumberOfTransactions) + (averageJitofee * Math.floor(expectedNumberOfTransactions / 2));
+    console.log(expectedNumberOfTransactions, reqBalance, recentUserSolBalance);
     // if (recentUserSolBalance < reqBalance) {
     //     return ctx.reply(`⏳ Insufficient Balance to move with the bot, based on the conditions give, min balance should be approximately ${reqBalance}!`);
     // }
@@ -380,6 +382,7 @@ bot.action('LAUNCH_BOT', async (ctx) => {
 
     userSessions[userId].status = 'Launched';
     userSessions[userId].sessionId = response?.id;
+    userSessions[userId].expectedNumberOfTransactions = expectedNumberOfTransactions;
     // clearing session 
     // userSessions[userId] = {};
     // ctx.reply(
@@ -394,6 +397,11 @@ bot.action('LAUNCH_BOT', async (ctx) => {
     //insert 
 });
 
+const stopAndClearSession = (ctx, userId, status) => {
+    userSessions[userId] = {};
+    return ctx.reply(`${status === "StoppedWithError" ? 'Some problem occurred' : 'Your target achieved successfully'}, stopping bot.\n\n Want to start new session press /start.`)
+}
+
 
 bot.action('REFRESH_BOT_DETAILS', async (ctx) => {
     const userId = ctx.from.id;
@@ -404,6 +412,8 @@ bot.action('REFRESH_BOT_DETAILS', async (ctx) => {
         const sessionData = await getSingleData({ id: data?.sessionId }, "sol_bot_details");
         console.log(sessionData);
         if (!sessionData) return showMainTemplate(ctx, userId)
+        if (sessionData?.achievedVolume > targetVolumeInSol || ["TargetAchieved", "StoppedWithError", "ForceStop"].includes(sessionData?.status)) return stopAndClearSession(ctx, userId, sessionData?.status);
+
         userSessions[userId].tokenAddress = sessionData?.tokenaddress;
         userSessions[userId].targetVolume = sessionData?.targetvolume;
         userSessions[userId].targetVolumeSol = sessionData?.targetvolumeinsol;

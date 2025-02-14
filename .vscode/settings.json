@@ -4,6 +4,7 @@
         "currentbatchnumber",
         "getbalanace",
         "isactive",
+        "Jitofee",
         "keypair",
         "LAMPORTS",
         "maxamount",
@@ -12,6 +13,7 @@
         "Solana",
         "targetvolume",
         "targetvolumeinsol",
-        "totaltransactioninitiated"
+        "totaltransactioninitiated",
+        "Txns"
     ]
 }
