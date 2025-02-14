@@ -1,5 +1,5 @@
 const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, SystemProgram, Transaction, sendAndConfirmTransaction } = require("@solana/web3.js");
-const { connection3, connection2 } = require("../constants");
+const { connection3, connection2, averageJitofee } = require("../constants");
 const { createData, getSingleData } = require("../Repository/DBE");
 const bs58 = require("bs58");
 const { getJitoTransferIx, basicBundleJito } = require("./jito");
@@ -49,7 +49,7 @@ const withdrawAll = async (userId, newAccount) => {
     const [balance, recentBlock, jitoTx] = await Promise.all([getSolanaBalance(wallet.publickey), connection2.getLatestBlockhash(), getJitoTransferIx(keypair)]);
     console.log("[transferEverything]");
     // console.log(originalBalance)
-    if (Number(balance * LAMPORTS_PER_SOL) - 5000 < 0) {
+    if (Number(balance * LAMPORTS_PER_SOL) - 5000 - (averageJitofee*LAMPORTS_PER_SOL)< 0) {
         return {
             success: false,
             txHash: "",
@@ -61,7 +61,7 @@ const withdrawAll = async (userId, newAccount) => {
     const transferInstruction = SystemProgram.transfer({
         fromPubkey: keypair.publicKey,
         toPubkey: new PublicKey(newAccount),
-        lamports: Number(balance * LAMPORTS_PER_SOL) - 5000, // Transfer everything except the rent-exempt minimum
+        lamports: Number(balance * LAMPORTS_PER_SOL) - 5000 - (averageJitofee*LAMPORTS_PER_SOL), // Transfer everything except the rent-exempt minimum
     });
     const transaction = new Transaction().add(transferInstruction, jitoTx);
     transaction.recentBlockhash = recentBlock.blockhash;
