@@ -372,7 +372,7 @@ bot.action('CONFIRM_WITHDRAW', async (ctx) => {
 
     const initiateWithdraw = await withdrawAll(userId.toString(), sessionData?.withdrawAddress);
     // if(initiateWithdraw)
-    return ctx.reply(!initiateWithdraw?.success ? initiateWithdraw?.message :`Withdrawal transaction has been started.\n\nTransaction Hash: \`${initiateWithdraw?.txHash}\`\n`);
+    return ctx.reply(!initiateWithdraw?.success ? initiateWithdraw?.message :`Withdrawal transaction has been Processed.`);
 });
 
 bot.action('LAUNCH_BOT', async (ctx) => {
