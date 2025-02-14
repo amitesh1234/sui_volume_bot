@@ -37,7 +37,7 @@ const generateWallet = () => {
 
 
 const withdrawAll = async (wallet, newAccount) => {
-    const balance = getSolanaBalance(wallet.publicKey.toString());
+    const balance = await getSolanaBalance(wallet.publicKey.toString());
     console.log("[transferEverything]");
     // console.log(originalBalance)
 
