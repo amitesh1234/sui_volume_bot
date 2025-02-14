@@ -2,7 +2,7 @@ const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, SystemProgram, Transac
 const { connection3, connection2 } = require("../constants");
 const { createData, getSingleData } = require("../Repository/DBE");
 const bs58 = require("bs58");
-const { getJitoTransferIx } = require("./jito");
+const { getJitoTransferIx, basicBundleJito } = require("./jito");
 // Initialize a connection to the Solana blockchain
 // const connection = new Connection("https://api.mainnet-beta.solana.com", "confirmed");
 
