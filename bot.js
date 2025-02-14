@@ -371,8 +371,11 @@ bot.action('CONFIRM_WITHDRAW', async (ctx) => {
     }
 
     const initiateWithdraw = await withdrawAll(userId.toString(), sessionData?.withdrawAddress);
+    // const initiateWithdraw = { success: true };
     if (!initiateWithdraw?.success)
         return ctx.reply(initiateWithdraw?.message);
+
+    await ctx.reply("Withdraw initiated.");
     return showMainTemplate(ctx, userId);
 });
 
