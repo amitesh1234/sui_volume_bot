@@ -1,9 +1,11 @@
 const {
     Connection
 } = require("@solana/web3.js");
+const connection = new Connection(`https://solana-mainnet.api.syndica.io/api-key/${process.env.SYNDICA_API_KEY}`, 'confirmed');
 
-const connection = new Connection('https://api.mainnet-beta.solana.com', 'confirmed');
-const connection2 = new Connection('https://mainnet.helius-rpc.com/?api-key=', 'confirmed');
+// const connection = new Connection('https://api.mainnet-beta.solana.com', 'confirmed');
+const connection2 = new Connection(`https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}`, 'confirmed');
+const connection3 = new Connection(`https://solana-mainnet.api.syndica.io/api-key/${process.env.SYNDICA_API_KEY}`, 'confirmed');
 
 // const connection = new Connection('https://api.devnet.solana.com', 'confirmed');
 const privateKey = "";
@@ -54,12 +56,16 @@ const getBatchSize = (transactionsPerMinute) => parseInt(transactionsPerMinute) 
 module.exports = {
     connection,
     connection2,
+    connection3,
     privateKey,
     wsolAddress,
     slippage: 4,
-    tax: 0.5,
+    tax: 0.001, //fee in sol
     minSolAmount: 0.001,
+    minSolBalance: 0.1,
     transactionsPerMinute,
+    averageFee: 0.0005,
+    averageJitofee: 0.0007,
     getDelayMs,
     validateSolAmountRange,
     getBatchSize
