@@ -46,8 +46,9 @@ const withdrawAll = async (userId, newAccount) => {
     // const balance = await getSolanaBalance(wallet.publickey);
     console.log("[transferEverything]");
     // console.log(originalBalance)
-    if(Number(balance*LAMPORTS_PER_SOL) - 5000 < 0) {
+    if (Number(balance * LAMPORTS_PER_SOL) - 5000 < 0) {
         return {
+            success: false,
             txHash: "",
             message: "Balance is very low for withdrawal!"
         }
@@ -75,6 +76,7 @@ const withdrawAll = async (userId, newAccount) => {
     }, "sol_withdraw")
 
     return {
+        success: true,
         txHash: txSignature
     }
 }
