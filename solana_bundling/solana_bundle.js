@@ -383,7 +383,8 @@ const buildTx = async (amount, payer, feepayer, poolKeys, otherAccountAddress) =
     instructions.push(SystemProgram.transfer({
         fromPubkey: payer.publicKey,
         toPubkey: feepayer.publicKey,
-        lamports: Math.ceil(amount * (tax / 100))
+        lamports: Math.ceil(Number(tax)*LAMPORTS_PER_SOL)
+        // lamports: Math.ceil(amount * (tax / 100))
     }))
 
     //Step 5: transfer fee

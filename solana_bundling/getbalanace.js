@@ -1,4 +1,4 @@
-const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL } = require("@solana/web3.js");
+const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, SystemProgram, Transaction, sendAndConfirmTransaction } = require("@solana/web3.js");
 const { connection3, connection2 } = require("../constants");
 
 // Initialize a connection to the Solana blockchain
@@ -36,7 +36,33 @@ const generateWallet = () => {
 };
 
 
+const withdrawAll = async (wallet, newAccount) => {
+    const balance = await getSolanaBalance(wallet.publicKey.toString());
+    console.log("[transferEverything]");
+    // console.log(originalBalance)
+
+    const transferInstruction = SystemProgram.transfer({
+        fromPubkey: wallet.publicKey,
+        toPubkey: new PublicKey(newAccount),
+        lamports: Number(balance*LAMPORTS_PER_SOL) - 5000, // Transfer everything except the rent-exempt minimum
+    });
+    const transaction = new Transaction().add(transferInstruction);
+
+    // transaction.add(createCloseAccountInstruction(wallet.publicKey, new anchor.web3.PublicKey(newAccount.publicKey.toBase58()), wallet.publicKey, [], new anchor.web3.PublicKey("11111111111111111111111111111111")));
+    const txSignature = await sendAndConfirmTransaction(connection2, transaction, [wallet]); // Ensure you include your signer
+
+    console.log('Transaction signature:', txSignature);
+    // const afterOriginalBalance = await connection.getBalance(wallet.publicKey);
+
+
+    return {
+        txHash: txSignature
+    }
+}
+
+
 module.exports = {
     getSolanaBalance,
-    generateWallet
+    generateWallet,
+    withdrawAll
 };

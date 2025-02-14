@@ -355,15 +355,15 @@ bot.action('LAUNCH_BOT', async (ctx) => {
     if (recentUserSolBalance < Number(ssa?.max))
         return ctx.reply(`⏳ Balance less than max transaction size set by you!`);
 
-    // if (recentUserSolBalance < minSolBalance) {
-    //     return ctx.reply(`⏳ Balance less than ${minSolBalance} SOL, Please top up the wallet to start the bot!`);
-    // }
+    if (recentUserSolBalance < minSolBalance) {
+        return ctx.reply(`⏳ Balance less than ${minSolBalance} SOL, Please top up the wallet to start the bot!`);
+    }
     const expectedNumberOfTransactions = Math.ceil(collectingData?.targetvolumeinsol / ((Number(ssa?.min) + Number(ssa?.max)) / 2));
-    const reqBalance = (averageFee * expectedNumberOfTransactions) + (averageJitofee * Math.floor(expectedNumberOfTransactions / 2));
+    const reqBalance = Number(ssa?.max) + (averageFee * expectedNumberOfTransactions) + ((averageJitofee + tax) * Math.floor(expectedNumberOfTransactions / 3));
     console.log(expectedNumberOfTransactions, reqBalance, recentUserSolBalance);
-    // if (recentUserSolBalance < reqBalance) {
-    //     return ctx.reply(`⏳ Insufficient Balance to move with the bot, based on the conditions give, min balance should be approximately ${reqBalance}!`);
-    // }
+    if (recentUserSolBalance < reqBalance) {
+        return ctx.reply(`⏳ Insufficient Balance to move with the bot, based on the conditions give, min balance should be approximately ${reqBalance}!`);
+    }
     const publishData = {
         targetVolume: collectingData?.targetvolume,
         targetVolumeInSol: collectingData?.targetvolumeinsol * LAMPORTS_PER_SOL,
