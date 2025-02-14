@@ -342,7 +342,9 @@ bot.action('ADD_CUSTOM_SOL_SWAP', async (ctx) => {
 
 bot.action('WITHDRAW', async (ctx) => {
     const userId = ctx.from.id;
-    if (!userSessions[userId]) return; // Ensure session exists
+    if (!userSessions[userId]) return ctx.reply("No session found"); // Ensure session exists
+
+    if(userSessions[userId]?.status === "launched") return ctx.reply("Can't process withdraw when bot is working. please stop first to withdraw.");
     userSessions[userId].isWithdrawClicked = true;
 
     ctx.reply('⏳ Please enter the wallet address of Sol wallet to withdraw:',
