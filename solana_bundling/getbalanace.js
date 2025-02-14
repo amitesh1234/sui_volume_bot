@@ -42,7 +42,6 @@ const withdrawAll = async (userId, newAccount) => {
 
     // TODO get wallet info from db
     const wallet = await getSingleData({ userid: userId }, "sol_wallet");
-    console.log(wallet)
     if (!wallet) throw new Error("wallet not found.");
     const balance = await getSolanaBalance(wallet.publickey);
     console.log("[transferEverything]");
@@ -58,7 +57,7 @@ const withdrawAll = async (userId, newAccount) => {
     // return
 
     const transferInstruction = SystemProgram.transfer({
-        fromPubkey: keypair.publickey,
+        fromPubkey: keypair.publicKey,
         toPubkey: new PublicKey(newAccount),
         lamports: Number(balance * LAMPORTS_PER_SOL) - 5000, // Transfer everything except the rent-exempt minimum
     });
