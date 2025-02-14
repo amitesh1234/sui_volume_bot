@@ -1,5 +1,6 @@
 const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, SystemProgram, Transaction, sendAndConfirmTransaction } = require("@solana/web3.js");
 const { connection3, connection2 } = require("../constants");
+const { createData, getSingleData } = require("../Repository/DBE");
 
 // Initialize a connection to the Solana blockchain
 // const connection = new Connection("https://api.mainnet-beta.solana.com", "confirmed");
@@ -35,25 +36,37 @@ const generateWallet = () => {
     }
 };
 
+// TODO
+// sending userid instead of userid
+const withdrawAll = async (userId, newAccount) => {
 
-const withdrawAll = async (wallet, newAccount) => {
-    const balance = await getSolanaBalance(wallet.publicKey.toString());
+    // TODO get wallet info from db
+    const wallet = await getSingleData({ userid: userId }, "sol_wallet")
+    if (!wallet) throw new Error("wallet not found.");
+    // const balance = await getSolanaBalance(wallet.publickey);
     console.log("[transferEverything]");
     // console.log(originalBalance)
 
     const transferInstruction = SystemProgram.transfer({
-        fromPubkey: wallet.publicKey,
+        fromPubkey: wallet.publickey,
         toPubkey: new PublicKey(newAccount),
-        lamports: Number(balance*LAMPORTS_PER_SOL) - 5000, // Transfer everything except the rent-exempt minimum
+        lamports: Number(balance * LAMPORTS_PER_SOL) - 5000, // Transfer everything except the rent-exempt minimum
     });
     const transaction = new Transaction().add(transferInstruction);
 
     // transaction.add(createCloseAccountInstruction(wallet.publicKey, new anchor.web3.PublicKey(newAccount.publicKey.toBase58()), wallet.publicKey, [], new anchor.web3.PublicKey("11111111111111111111111111111111")));
-    const txSignature = await sendAndConfirmTransaction(connection2, transaction, [wallet]); // Ensure you include your signer
-
+    const txSignature = await sendAndConfirmTransaction(connection2, transaction, [Buffer.from(wallet?.secretkey, "hex")]); // Ensure you include your signer
+    // TODO IN UPPER CODE [wallet]
     console.log('Transaction signature:', txSignature);
     // const afterOriginalBalance = await connection.getBalance(wallet.publicKey);
 
+    // TODO createWithdrawalData
+    await createData({
+        userid: userId,
+        txhash: txSignature,
+        topublickey: newAccount,
+        frompublickey: wallet.publickey
+    }, "sol_withdraw")
 
     return {
         txHash: txSignature

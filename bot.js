@@ -4,7 +4,7 @@ const BigNumber = require('bignumber.js');
 const { transactionsPerMinute, validateSolAmountRange, minSolBalance, averageFee, averageJitofee } = require('./constants')
 const { createSBD, createData, getSingleData, updateData } = require('./Repository/DBE');
 require('./Repository/models');
-const { getSolanaBalance, generateWallet } = require("./solana_bundling/getbalanace");
+const { getSolanaBalance, generateWallet, withdrawAll } = require("./solana_bundling/getbalanace");
 
 const Faye = require('faye');
 const { LAMPORTS_PER_SOL, PublicKey } = require('@solana/web3.js');
@@ -169,7 +169,27 @@ bot.on('text', async (ctx) => {
             return showMainTemplate(ctx, userId);
         }
 
+        // If user is withdraw input
+        if (userSessions[userId]?.isWithdrawClicked) {
 
+            if (!isValidSolanaAddress(userText))
+                return ctx.reply('❌ Invalid Address.');
+
+            // Store the custom delay and update the user session
+            userSessions[userId].withdrawAddress = userText; // Reset state
+            userSessions[userId].isWithdrawClicked = false; // Reset state
+
+            // Show the updated main template
+            return ctx.reply(
+                `⏳ Please confirm your withdrawal request.`,
+                Markup.inlineKeyboard([
+                    [
+                        Markup.button.callback('Confirm', 'CONFIRM_WITHDRAW'),
+                        Markup.button.callback('🔙 Back to Main', 'BACK_TO_MAIN')
+                    ]
+                ])
+            );
+        }
     } catch (error) {
         console.error('Error:', error);
         await ctx.reply('⚠️ Oops! Something went wrong. Please try again.');
@@ -185,8 +205,8 @@ function showMainTemplate(ctx, userId) {
     let buttons = [
         userSessions[userId]?.status === "Launched" ? stopButton : LaunchButton,
         [Markup.button.callback(`▶️ Transactions per minute (${userSessions[userId]?.transactionsPerMinute || 30})`, 'SHOW_DELAY_OPTIONS'), Markup.button.callback(`✅ Buy with min-max ${userSessions[userId]?.swapSolAmount || '3-4'} SOL`, 'BUY_SOL')],
-        // [Markup.button.callback('💵 Withdraw', 'WITHDRAW'), Markup.button.callback('🔄 Refresh', 'REFRESH')],
-        [Markup.button.callback('📖 Guide', 'GUIDE'), Markup.button.callback('📖 Refresh', 'REFRESH_BOT_DETAILS')]
+        [Markup.button.callback('💵 Withdraw', 'WITHDRAW'), Markup.button.callback('🔄 Refresh', 'REFRESH_BOT_DETAILS')],
+        [Markup.button.callback('📖 Guide', 'GUIDE')]
     ];
 
     ctx.reply(
@@ -196,7 +216,7 @@ function showMainTemplate(ctx, userId) {
         `🔹 Token Address: \`${userSessions[userId]?.tokenAddress}\`\n` +
         `💰 Target Volume Amount: *$${userSessions[userId]?.targetVolume}*\n\n` +
         `💰 Estimated Target Volume Sol AMount: *${userSessions[userId]?.targetVolumeSol || '0'} SOL*\n` +
-        `💰 Estimated Transaction needed: *${userSessions[userId]?.expectedNumberOfTransactions + ' TXN.' || 'Not calculated yet.'}*\n` +
+        `💰 Estimated Transaction needed: *${userSessions[userId]?.expectedNumberOfTransactions ? userSessions[userId]?.expectedNumberOfTransactions + ' TXN.' : 'Not calculated yet.'}*\n` +
 
         `⚙️ ${userSessions[userId]?.delayMode || "Fast"} Mode: ${userSessions[userId]?.transactionsPerMinute || "30"} transactions per min\n` +
         `🔄 Sol swapped per TX: ${userSessions[userId]?.swapSolAmount || "3-4"} SOL\n\n` +
@@ -320,6 +340,39 @@ bot.action('ADD_CUSTOM_SOL_SWAP', async (ctx) => {
 
 });
 
+bot.action('WITHDRAW', async (ctx) => {
+    const userId = ctx.from.id;
+    if (!userSessions[userId]) return; // Ensure session exists
+    userSessions[userId].isWithdrawClicked = true;
+
+    ctx.reply('⏳ Please enter the wallet address of Sol wallet to withdraw:',
+        Markup.inlineKeyboard([
+            [Markup.button.callback('🔙 Back to Main', 'BACK_TO_MAIN')]
+        ]));
+});
+
+// bot.action('CONFIRM_WITHDRAW_ALERT', async (ctx) => 
+
+
+bot.action('CONFIRM_WITHDRAW', async (ctx) => {
+    const userId = ctx.from.id;
+    const sessionData = userSessions[userId];
+    if (!sessionData) return ctx.reply("No session found."); // Ensure session exists
+
+    if (!sessionData?.withdrawAddress) {
+        userSessions[userId].isWithdrawClicked = true;
+
+        return ctx.reply('⏳ Sorry we did not have withdrawal address.\n\nPlease enter the wallet address of Sol wallet to withdraw:',
+            Markup.inlineKeyboard([
+                [Markup.button.callback('🔙 Back to Main', 'BACK_TO_MAIN')]
+            ]));
+    }
+
+    const initiateWithdraw = await withdrawAll(userId.toString(), sessionData?.withdrawAddress)
+    // if(initiateWithdraw)
+    return ctx.reply(`Withdrawal transaction has been started.\n\nTransaction Hash: \`${initiateWithdraw?.txHash}\`\n`);
+});
+
 bot.action('LAUNCH_BOT', async (ctx) => {
     const userId = ctx.from.id;
     const data = userSessions[userId];
@@ -355,15 +408,15 @@ bot.action('LAUNCH_BOT', async (ctx) => {
     if (recentUserSolBalance < Number(ssa?.max))
         return ctx.reply(`⏳ Balance less than max transaction size set by you!`);
 
-    if (recentUserSolBalance < minSolBalance) {
-        return ctx.reply(`⏳ Balance less than ${minSolBalance} SOL, Please top up the wallet to start the bot!`);
-    }
+    // if (recentUserSolBalance < minSolBalance) {
+    //     return ctx.reply(`⏳ Balance less than ${minSolBalance} SOL, Please top up the wallet to start the bot!`);
+    // }
     const expectedNumberOfTransactions = Math.ceil(collectingData?.targetvolumeinsol / ((Number(ssa?.min) + Number(ssa?.max)) / 2));
-    const reqBalance = Number(ssa?.max) + (averageFee * expectedNumberOfTransactions) + ((averageJitofee + tax) * Math.floor(expectedNumberOfTransactions / 3));
+    const reqBalance = (averageFee * expectedNumberOfTransactions) + (averageJitofee * Math.floor(expectedNumberOfTransactions / 2));
     console.log(expectedNumberOfTransactions, reqBalance, recentUserSolBalance);
-    if (recentUserSolBalance < reqBalance) {
-        return ctx.reply(`⏳ Insufficient Balance to move with the bot, based on the conditions give, min balance should be approximately ${reqBalance}!`);
-    }
+    // if (recentUserSolBalance < reqBalance) {
+    //     return ctx.reply(`⏳ Insufficient Balance to move with the bot, based on the conditions give, min balance should be approximately ${reqBalance}!`);
+    // }
     const publishData = {
         targetVolume: collectingData?.targetvolume,
         targetVolumeInSol: collectingData?.targetvolumeinsol * LAMPORTS_PER_SOL,
@@ -383,18 +436,8 @@ bot.action('LAUNCH_BOT', async (ctx) => {
     userSessions[userId].status = 'Launched';
     userSessions[userId].sessionId = response?.id;
     userSessions[userId].expectedNumberOfTransactions = expectedNumberOfTransactions;
-    // clearing session 
-    // userSessions[userId] = {};
-    // ctx.reply(
-    //     `\uD83D\uDD39 *Impact Bot (Alpha): Launched successfully* \uD83D\uDD39\n\n` +
-    //     `Impact Bot (Alpha): A high-speed, anti-MEV volume bot designed specifically for Solana.\n\n` +
-    //     `🔹 Launch id: \`${response?.id}\`\n` +
-    //     `💰 *Keep this id for future status.*\n\n` +
-    //     `🔄 For Start new session, Enter /start.`
-    // )
-    showMainTemplate(ctx, userId)
-    //data
-    //insert 
+   
+    return showMainTemplate(ctx, userId)
 });
 
 const stopAndClearSession = (ctx, userId, status) => {
@@ -451,9 +494,9 @@ bot.action('STOP_BOT', async (ctx) => {
     // clearing session.
     userSessions[userId] = {}
     return ctx.reply(`Your bot has been stopped.\n\n Want to start new session press /start.`)
-
-
 });
+
+
 
 // Start the bot
 bot.launch();
