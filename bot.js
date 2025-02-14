@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Telegraf, Markup } = require('telegraf');
 const BigNumber = require('bignumber.js');
-const { transactionsPerMinute, validateSolAmountRange, minSolBalance, averageFee, averageJitofee } = require('./constants')
+const { transactionsPerMinute, validateSolAmountRange, minSolBalance, averageFee, averageJitofee, tax } = require('./constants')
 const { createSBD, createData, getSingleData, updateData } = require('./Repository/DBE');
 require('./Repository/models');
 const { getSolanaBalance, generateWallet } = require("./solana_bundling/getbalanace");
