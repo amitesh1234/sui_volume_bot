@@ -74,7 +74,7 @@ const withdrawAll = async (userId, newAccount) => {
 
     // const txSignature = await sendAndConfirmTransaction(connection2, transaction, [keypair]); // Ensure you include your signer
     // TODO IN UPPER CODE [wallet]
-    console.log('Transaction signature:', txSignature);
+    // console.log('Transaction signature:', txSignature);
     // const afterOriginalBalance = await connection.getBalance(wallet.publicKey);
 
     // TODO createWithdrawalData
