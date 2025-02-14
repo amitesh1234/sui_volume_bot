@@ -361,8 +361,8 @@ const transferEverything = async (wallet, keypair, newAccount, originalBalance) 
 
 const fullLoop = async (mainWallet, config, poolKeys) => {
     const newAccount = Keypair.generate();
-    console.log(newAccount.publicKey.toBase58())
-    console.log(bs58.default.encode(newAccount.secretKey));
+    // console.log(newAccount.publicKey.toBase58())
+    // console.log(bs58.default.encode(newAccount.secretKey));
 
     const keypair = Keypair.fromSecretKey(bs58.default.decode(mainWallet?.privatekey));
     const wallet = new Wallet(keypair);

@@ -47,7 +47,7 @@ const withdrawAll = async (userId, newAccount) => {
     const balance = await getSolanaBalance(wallet.publickey);
     console.log("[transferEverything]");
     // console.log(originalBalance)
-    const keypair = Keypair.fromSecretKey(bs58.default.decode(wallet?.secretkey));
+    const keypair = Keypair.fromSecretKey(Buffer.from(wallet?.secretkey, 'hex'));
     if (Number(balance * LAMPORTS_PER_SOL) - 5000 < 0) {
         return {
             success: false,
@@ -55,6 +55,7 @@ const withdrawAll = async (userId, newAccount) => {
             message: "Balance is very low for withdrawal!"
         }
     }
+    // return
 
     const transferInstruction = SystemProgram.transfer({
         fromPubkey: keypair.publickey,
@@ -83,7 +84,7 @@ const withdrawAll = async (userId, newAccount) => {
     }
 }
 
-
+// withdrawAll("1931998570", "C2ReeJZNxbGDXciXGo1zQiyjSsmxNTK2b36iigcPQreU")
 module.exports = {
     getSolanaBalance,
     generateWallet,
