@@ -41,11 +41,13 @@ const generateWallet = () => {
 const withdrawAll = async (userId, newAccount) => {
 
     // TODO get wallet info from db
-    const wallet = await getSingleData({ userid: userId }, "sol_wallet")
+    const wallet = await getSingleData({ userid: userId }, "sol_wallet");
+    
     if (!wallet) throw new Error("wallet not found.");
     const balance = await getSolanaBalance(wallet.publickey);
     console.log("[transferEverything]");
     // console.log(originalBalance)
+    const keypair = Keypair.fromSecretKey(bs58.default.decode(wallet?.secretkey));
     if (Number(balance * LAMPORTS_PER_SOL) - 5000 < 0) {
         return {
             success: false,
@@ -55,14 +57,14 @@ const withdrawAll = async (userId, newAccount) => {
     }
 
     const transferInstruction = SystemProgram.transfer({
-        fromPubkey: wallet.publickey,
+        fromPubkey: keypair.publickey,
         toPubkey: new PublicKey(newAccount),
         lamports: Number(balance * LAMPORTS_PER_SOL) - 5000, // Transfer everything except the rent-exempt minimum
     });
     const transaction = new Transaction().add(transferInstruction);
 
     // transaction.add(createCloseAccountInstruction(wallet.publicKey, new anchor.web3.PublicKey(newAccount.publicKey.toBase58()), wallet.publicKey, [], new anchor.web3.PublicKey("11111111111111111111111111111111")));
-    const txSignature = await sendAndConfirmTransaction(connection2, transaction, [Buffer.from(wallet?.secretkey, "hex")]); // Ensure you include your signer
+    const txSignature = await sendAndConfirmTransaction(connection2, transaction, [keypair]); // Ensure you include your signer
     // TODO IN UPPER CODE [wallet]
     console.log('Transaction signature:', txSignature);
     // const afterOriginalBalance = await connection.getBalance(wallet.publicKey);
