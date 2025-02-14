@@ -1,13 +1,13 @@
 require('dotenv').config();
 const { Telegraf, Markup } = require('telegraf');
 const BigNumber = require('bignumber.js');
-const { transactionsPerMinute, validateSolAmountRange } = require('./constants')
+const { transactionsPerMinute, validateSolAmountRange, minSolBalance, averageFee, averageJitofee } = require('./constants')
 const { createSBD, createData, getSingleData, updateData } = require('./Repository/DBE');
 require('./Repository/models');
 const { getSolanaBalance, generateWallet } = require("./solana_bundling/getbalanace");
 
 const Faye = require('faye');
-const { LAMPORTS_PER_SOL } = require('@solana/web3.js');
+const { LAMPORTS_PER_SOL, PublicKey } = require('@solana/web3.js');
 let client = new Faye.Client('http://localhost:8675/');
 
 async function getTokenInfo(tokenId) {
@@ -123,12 +123,12 @@ bot.on('text', async (ctx) => {
 
                 userSessions[userId].depositWallet = publicKey;
                 userSessions[userId].solBalance = "0";
-                userSessions[userId].targetVolumeSol = Math.ceil(userText / solPrice);
+                userSessions[userId].targetVolumeSol = Math.ceil((userText / solPrice)*100)/100;
                 return showMainTemplate(ctx, userId);
             }
 
             const solPrice = await getSOLPrice();
-            userSessions[userId].targetVolumeSol = Math.ceil(userText / solPrice);
+            userSessions[userId].targetVolumeSol = Math.ceil((userText / solPrice)*100)/100;
             userSessions[userId].depositWallet = wallet.publickey;
             userSessions[userId].solBalance = wallet.balance;
 
@@ -204,7 +204,7 @@ function showMainTemplate(ctx, userId) {
         `${userSessions[userId]?.depositWallet ? '💰 *Your Deposit Wallet:*' : ''}\n` +
         `\`${userSessions[userId]?.depositWallet || ''}\`\n` +
         `💲 Balance: ${userSessions[userId]?.solBalance || "0"} SOL\n\n` +
-        `💲 MinimumB Balance Required for bot to run: 0.5 SOL\n\n` +
+        `💲 Minimum Balance Required for bot to run: ${minSolBalance} SOL\n\n` +
         ` ${userSessions[userId]?.status === "Launched" ? "🟢 " + userSessions[userId]?.status : userSessions[userId]?.status || ""}`,
         // `⚠️ The minimum deposit to reach the target volume is 4.1 SOL\n` +
         // `⏳ The estimated time to reach the target volume is 1.5 min`,
@@ -320,7 +320,7 @@ bot.action('ADD_CUSTOM_SOL_SWAP', async (ctx) => {
 bot.action('LAUNCH_BOT', async (ctx) => {
     const userId = ctx.from.id;
     const data = userSessions[userId];
-    console.log(data);
+    console.log("Data: ", data);
     if (!data || !data?.tokenAddress || !data?.targetVolume)
         return ctx.reply("⏳ Can't launch the bot.");
 
@@ -335,9 +335,10 @@ bot.action('LAUNCH_BOT', async (ctx) => {
         targetvolumeinsol: data?.targetVolumeSol,
         status: 'Launched'
     }
-    console.log(collectingData);
-
     
+
+    const response = await createSBD(collectingData);
+    if (!response?.id) return ctx.reply("⏳ Can't launch the bot.");
 
     // Reset user session for a fresh start
     // minAMount*LAMPORTS_PER_SOL
@@ -347,12 +348,20 @@ bot.action('LAUNCH_BOT', async (ctx) => {
 
     const wallet = await getSingleData({ userid: userId.toString() }, "sol_wallet")
     if (!wallet?.secretkey) return ctx.reply("⏳ Can't launch the bot.");
-    if (await getSolanaBalance(wallet?.secretkey) < 0.5)
-        return ctx.reply("⏳ Balance less than 0.5 Sol, Please top up the wallet to start the bot!");
+    const recentUserSolBalance = await getSolanaBalance(wallet?.publickey);
+    if(recentUserSolBalance < Number(ssa?.max)) {
+        return ctx.reply(`⏳ Balance less than max transaction size set by you!`);
 
-    const response = await createSBD(collectingData);
-    if (!response?.id) return ctx.reply("⏳ Can't launch the bot.");
-    
+    }
+    // if (recentUserSolBalance < minSolBalance) {
+    //     return ctx.reply(`⏳ Balance less than ${minSolBalance} SOL, Please topup the wallet to start the bot!`);
+    // }
+    const expectedNumberofTransactions = Math.ceil(collectingData?.targetvolumeinsol / ((Number(ssa?.min) + Number(ssa?.max)) / 2));
+    const reqBalance = (averageFee * expectedNumberofTransactions) + (averageJitofee * Math.floor(expectedNumberofTransactions / 2));
+    console.log(expectedNumberofTransactions, reqBalance, recentUserSolBalance);
+    // if (recentUserSolBalance < reqBalance) {
+    //     return ctx.reply(`⏳ Insufficient Balance to move with the bot, based on the conditions give, min balance should be approximately ${reqBalance}!`);
+    // }
     const publishData = {
         targetVolume: collectingData?.targetvolume,
         targetVolumeInSol: collectingData?.targetvolumeinsol * LAMPORTS_PER_SOL,
@@ -364,7 +373,7 @@ bot.action('LAUNCH_BOT', async (ctx) => {
         launchId: response?.id
     }
 
-    console.log("publishData", publishData);
+    console.log("publishData: ", publishData);
 
 
     client.publish('/RUN_BOT', publishData);
@@ -414,7 +423,7 @@ bot.action('REFRESH_BOT_DETAILS', async (ctx) => {
     const balance = await getSolanaBalance(dW);
     if (!balance) return ctx.reply("⏳ Some issue occurred, please try again later.")
 
-    updateData({ userid: userId }, { balance: balance }, "sol_wallet")
+    updateData({ balance: balance }, { userid: userId }, "sol_wallet")
 
     userSessions[userId].solBalance = balance;
     showMainTemplate(ctx, userId);

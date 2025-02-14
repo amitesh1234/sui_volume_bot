@@ -474,6 +474,7 @@ const volumeBundle = async (pairAddress, minAmount, maxAmount, bundleSize, payer
         const [jitoIx, recentBlockhashForSwap] = await Promise.all([getJitoTransferIx(payer), connection2.getLatestBlockhash()]);
         const instructions = await Promise.all(promises);
         instructions[0].push(jitoIx);
+        console.log("executing");
 
         const txns = await Promise.all(
             instructions.map((ix, index) => makeVersionedTransactionAndSign2(
@@ -523,7 +524,7 @@ const volumeBundle = async (pairAddress, minAmount, maxAmount, bundleSize, payer
 
         // }
 
-        return totalAmount + (totalAmount * (slippage / 100)).toFixed(2);
+        return totalAmount + Number((totalAmount - (totalAmount * (slippage / 100))).toFixed(2));
 
     } catch (err) {
         console.log("Error in [volumeBundle]: ", err);
@@ -546,21 +547,23 @@ const runVolumeBot = async (token, minAmount, maxAmount, transactionsPerMinute, 
         const numberOfBatches = Math.floor(transactionsPerMinute / batchSize);
         const delayTime = parseInt(60 / numberOfBatches) * 1000; // Convert to milliseconds
 
-        console.log(`Number of Batches: ${numberOfBatches}, Delay Time: ${delayTime}ms`, secretKey);
+        console.log(`Number of Batches: ${numberOfBatches}, Delay Time: ${delayTime}ms`);
 
         // const payer = Keypair.fromSecretKey(bs58.default.decode(secretKey));
         const payer = Keypair.fromSecretKey(Buffer.from(secretKey, "hex"));
 
         const payerWallets = await getData({ isactive: true }, "sol_payer_wallet");
         // console.log(payer, payerWallets);
+        //todo update bot to stop
         if (!payerWallets?.length) throw new Error("No active payer wallet found.");
         // const feePayerArray = [payerWallets];
 
+        const OTHER_MINT_ADDRESS = new PublicKey(token);
         // other account details
-        const otherAccountAddress = await getAssociatedTokenAddress(new PublicKey(token), payer.publicKey, false);
-        const [accountDetails, recentBlock] = await Promise.all([connection.getAccountInfo(otherAccountAddress, 'confirmed'), connection2.getLatestBlockhash()]);
+        const otherAccountAddress = await getAssociatedTokenAddress(OTHER_MINT_ADDRESS, payer.publicKey, false);
+        const [accountDetails, recentBlock, jitoTx] = await Promise.all([connection.getAccountInfo(otherAccountAddress, 'confirmed'), connection2.getLatestBlockhash(), getJitoTransferIx(payer)]);
         const initialTx = new Transaction();
-        let initalIxs = [];
+        // let initalIxs = [];
 
         if (!accountDetails) {
             console.log("Creating associated token account");
@@ -575,7 +578,7 @@ const runVolumeBot = async (token, minAmount, maxAmount, transactionsPerMinute, 
             initialTx.add(
                 ix1
             );
-            initalIxs.push(ix1);
+            // initalIxs.push(ix1);
             // console.log(tx)
             // await sendAndConfirmTransaction(connection2, initialTx, [feepayer, payer]); //todo remove this later when adddress lookup table code is uncommented
 
@@ -589,48 +592,65 @@ const runVolumeBot = async (token, minAmount, maxAmount, transactionsPerMinute, 
 
         const addressLookupTxIx = await getAddressLookupTxIs(poolKeys, payer, payer);
 
-        initialTx.add(addressLookupTxIx?.ix[0], addressLookupTxIx?.ix[1]);
-        initalIxs.push(addressLookupTxIx?.ix[0]);
-        initalIxs.push(addressLookupTxIx?.ix[1]);
+        initialTx.add(addressLookupTxIx?.ix[0], addressLookupTxIx?.ix[1], jitoTx);
+        // initalIxs.push(addressLookupTxIx?.ix[0]);
+        // initalIxs.push(addressLookupTxIx?.ix[1]);
+        // initalIxs.push(jitoTx);
         console.log("Sending initial tx");
-        const finalInitialTxns = await Promise.all(
-            initalIxs.map((ix, index) => makeVersionedTransactionAndSign(
-                ix,
-                payer,
-                recentBlock.blockhash,
-                [payer]
-            ))
-        );
-        return;
-        await basicBundleJito(finalInitialTxns);
-        // await sendAndConfirmTransaction(connection2, initialTx, [feepayer, payer]);
+        // const finalInitialTxns = await makeVersionedTransactionAndSign(
+        //     initalIxs,
+        //     payer,
+        //     recentBlock.blockhash,
+        //     [payer]
+        // );
+        initialTx.recentBlockhash = recentBlock.blockhash;
+        initialTx.feePayer = payer.publicKey;
+        initialTx.sign(payer);
+        const serializedTransaction = initialTx.serialize({ verifySignatures: false });
+        const base58EncodedTransaction = bs58.default.encode(serializedTransaction);
+
+        await basicBundleJito([base58EncodedTransaction]);
+        // console.log(await sendAndConfirmTransaction(connection2, initialTx, [payer]));
 
         console.log("Geting lookup table data");
-        const lookupTableAccount = await connection2.getAddressLookupTable(addressLookupTxIx?.lookupTableAddress)
-            .then(res => res.value)
-            .catch(err => {
-                console.error("Failed to fetch lookup table:", err);
-                return null;
-            });
+        let lookupTableAccount;
+        let flag = true;
+        while (flag) {
+            lookupTableAccount = await connection2.getAddressLookupTable(addressLookupTxIx?.lookupTableAddress)
+                .then(async(res) => {
+                    if(!res?.value) {
+                        await sleep(2000);
+                        return;
+                    }
+                    flag = false;
+                    return res.value;
+                })
+                .catch(async(err) => {
+                    console.error("Failed to fetch lookup table:", err);
+                    await sleep(2000);
+                    return null;
+                });
+        }
         if (!lookupTableAccount)
             throw new Error("Lookup table not found on-chain. Ensure it's created and confirmed.");
 
-
-        console.log("Running volume Bot");
         let count = 0;
         let achievedVolume = 0;
         let totalTransactionCount = 0;
 
         console.log("Running volume Bot...");
         while (true) {
+            // console.log(payerWallets)
             let currentFeePayers = []
             for (let k = 0; k < batchSize; k++) {
-                currentFeePayers.push(Keypair.fromSecretKey(Buffer.from(payerWallets[count % payerWallets.length], "hex")));
+                currentFeePayers.push(Keypair.fromSecretKey(Buffer.from(payerWallets[count % payerWallets.length]?.secretkey, "hex")));
                 count += 1;
             }
+            // console.log(batchSize, currentFeePayers);
+            // return;
             // const currentFeePayer = feePayerArray[count % feePayerArray.length];
 
-            let volume = volumeBundle(pairAddress, minAmount, maxAmount, batchSize, payer, currentFeePayers, poolKeys, otherAccountAddress, addressLookupTxIx?.lookupTableAddress, lookupTableAccount);
+            let volume = await volumeBundle(pairAddress, minAmount, maxAmount, batchSize, payer, currentFeePayers, poolKeys, otherAccountAddress, addressLookupTxIx?.lookupTableAddress, lookupTableAccount);
             count += 1;
             achievedVolume += volume;
             totalTransactionCount += batchSize;
@@ -665,12 +685,6 @@ const runVolumeBot = async (token, minAmount, maxAmount, transactionsPerMinute, 
     }
 }
 
-
-
-
-
-
-// runVolumeBot("78G3BRTnvsRzoT5r9Keqz48Y289wSXbGAxggcKvQpump", 1000000, 150000, 30, "", 1, "")
 
 module.exports = {
     getTokenInfo,
