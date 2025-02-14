@@ -42,7 +42,7 @@ const withdrawAll = async (userId, newAccount) => {
 
     // TODO get wallet info from db
     const wallet = await getSingleData({ userid: userId }, "sol_wallet");
-    
+    console.log(wallet)
     if (!wallet) throw new Error("wallet not found.");
     const balance = await getSolanaBalance(wallet.publickey);
     console.log("[transferEverything]");
