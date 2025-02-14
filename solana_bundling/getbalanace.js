@@ -80,7 +80,7 @@ const withdrawAll = async (userId, newAccount) => {
     // TODO createWithdrawalData
     await createData({
         userid: userId,
-        txhash: txSignature,
+        txhash: "",
         topublickey: newAccount,
         frompublickey: wallet.publickey
     }, "sol_withdraw")
