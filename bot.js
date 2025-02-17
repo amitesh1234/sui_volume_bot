@@ -402,7 +402,7 @@ bot.action('LAUNCH_BOT', async (ctx) => {
     // minAMount*LAMPORTS_PER_SOL
     // userSessions[userId] = {};
     const ssa = validateSolAmountRange(collectingData?.amount)
-    if (!ssa?.valid) return ctx.reply("⏳ Can't launch the bot.");
+    if (!ssa?.valid) return ctx.reply(ssa?.message || ssa?.message);
 
     const wallet = await getSingleData({ userid: userId.toString() }, "sol_wallet")
     if (!wallet?.secretkey) return ctx.reply("⏳ Can't launch the bot.");

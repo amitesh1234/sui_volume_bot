@@ -31,7 +31,7 @@ const getDelayMs = (t) => {
 const validateSolAmountRange = (input) => {
     console.log("validateSolAmountRange",input);
     const minSolAmount = parseFloat(0.001);
-    const maxSolAmount = parseFloat(20);
+    const maxSolAmount = parseFloat(100);
     const rangePattern = /^(\d+(\.\d+)?)-(\d+(\.\d+)?)$/;
     const match = input.match(rangePattern);
 
