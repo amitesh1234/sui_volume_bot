@@ -344,7 +344,7 @@ bot.action('WITHDRAW', async (ctx) => {
     const userId = ctx.from.id;
     if (!userSessions[userId]) return ctx.reply("No session found"); // Ensure session exists
 
-    if(userSessions[userId]?.status === "Launched") return ctx.reply("Can't process withdraw when bot is working. please stop first to withdraw.");
+    if (userSessions[userId]?.status === "Launched") return ctx.reply("Can't process withdraw when bot is working. please stop first to withdraw.");
     userSessions[userId].isWithdrawClicked = true;
 
     ctx.reply('⏳ Please enter the wallet address of Sol wallet to withdraw:',
@@ -371,8 +371,12 @@ bot.action('CONFIRM_WITHDRAW', async (ctx) => {
     }
 
     const initiateWithdraw = await withdrawAll(userId.toString(), sessionData?.withdrawAddress);
-    // if(initiateWithdraw)
-    return ctx.reply(!initiateWithdraw?.success ? initiateWithdraw?.message :`Withdrawal transaction has been Processed.`);
+    // const initiateWithdraw = { success: true };
+    if (!initiateWithdraw?.success)
+        return ctx.reply(initiateWithdraw?.message);
+
+    await ctx.reply("Withdraw initiated.");
+    return showMainTemplate(ctx, userId);
 });
 
 bot.action('LAUNCH_BOT', async (ctx) => {
@@ -438,7 +442,7 @@ bot.action('LAUNCH_BOT', async (ctx) => {
     userSessions[userId].status = 'Launched';
     userSessions[userId].sessionId = response?.id;
     userSessions[userId].expectedNumberOfTransactions = expectedNumberOfTransactions;
-   
+
     return showMainTemplate(ctx, userId)
 });
 
